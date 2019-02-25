@@ -168,6 +168,7 @@ func (vdb *versionedDB) ExecuteQueryWithMetadata(namespace, query string, metada
 func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
 	dbBatch := leveldbhelper.NewUpdateBatch()
 	namespaces := batch.GetUpdatedNamespaces()
+	batchSize := 0
 	for _, ns := range namespaces {
 		updates := batch.GetUpdates(ns)
 		for k, vv := range updates {
@@ -182,10 +183,12 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 					return err
 				}
 				dbBatch.Put(compositeKey, encodedVal)
+				batchSize += len(compositeKey) + len(encodedVal)
 			}
 		}
 	}
 	dbBatch.Put(savePointKey, height.ToBytes())
+	logger.Debugf("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
 	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
 	if err := vdb.db.WriteBatch(dbBatch, true); err != nil {
 		return err

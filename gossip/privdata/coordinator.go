@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric/common/flogging"
 	util2 "github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/committer"
 	"github.com/hyperledger/fabric/core/committer/txvalidator"
@@ -39,6 +40,7 @@ const (
 )
 
 var logger = util.GetLogger(util.LoggingPrivModule, "")
+var corLogger = flogging.MustGetLogger("endorser")
 
 // TransientStore holds private data that the corresponding blocks haven't been committed yet into the ledger
 type TransientStore interface {
@@ -146,10 +148,16 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 		return errors.New("Block header is nil")
 	}
 
+	seq := block.Header.Number
 	logger.Infof("[%s] Received block [%d] from buffer", c.ChainID, block.Header.Number)
 
 	logger.Debugf("[%s] Validating block [%d]", c.ChainID, block.Header.Number)
+
+	// startTotalValidation := time.Now()
 	err := c.Validator.Validate(block)
+	// elapsedTotalValidation := time.Since(startTotalValidation) / time.Millisecond
+	// corLogger.Infof("Validate Block %d in %d ms\n", seq, elapsedTotalValidation)
+
 	if err != nil {
 		logger.Errorf("Validation failed: %+v", err)
 		return err
@@ -226,7 +234,10 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	}
 
 	// commit block and private data
+	startTotalCommit := time.Now()
 	err = c.CommitWithPvtData(blockAndPvtData)
+	elapsedTotalCommit := time.Since(startTotalCommit) / time.Millisecond
+	corLogger.Infof("Commit Block %d  in %d ms\n", seq, elapsedTotalCommit)
 	if err != nil {
 		return errors.Wrap(err, "commit failed")
 	}
@@ -238,7 +249,6 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 		}
 	}
 
-	seq := block.Header.Number
 	if seq%c.transientBlockRetention == 0 && seq > c.transientBlockRetention {
 		err := c.PurgeByHeight(seq - c.transientBlockRetention)
 		if err != nil {
@@ -648,9 +658,9 @@ func (c *coordinator) listMissingPrivateData(block *common.Block, ownedRWsets ma
 	txList := data.forEachTxn(txsFilter, bi.inspectTransaction)
 
 	privateInfo := &privateDataInfo{
-		sources:            sources,
-		missingKeysByTxIDs: missing,
-		txns:               txList,
+		sources:                 sources,
+		missingKeysByTxIDs:      missing,
+		txns:                    txList,
 		missingRWSButIneligible: bi.missingRWSButIneligible,
 	}
 

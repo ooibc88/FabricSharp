@@ -14,6 +14,7 @@ import (
 
 	pb "github.com/golang/protobuf/proto"
 	vsccErrors "github.com/hyperledger/fabric/common/errors"
+	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/comm"
 	common2 "github.com/hyperledger/fabric/gossip/common"
@@ -150,6 +151,7 @@ type GossipStateProviderImpl struct {
 }
 
 var logger = util.GetLogger(util.LoggingStateModule, "")
+var stateLogger = flogging.MustGetLogger("endorser")
 
 // NewGossipStateProvider creates state provider with coordinator instance
 // to orchestrate arrival of private rwsets and blocks before committing them into the ledger.
@@ -534,6 +536,7 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 			logger.Debugf("[%s] Ready to transfer payloads (blocks) to the ledger, next block number is = [%d]", s.chainID, s.payloads.Next())
 			// Collect all subsequent payloads
 			for payload := s.payloads.Pop(); payload != nil; payload = s.payloads.Pop() {
+				startValidateBlock := time.Now()
 				rawBlock := &common.Block{}
 				if err := pb.Unmarshal(payload.Data, rawBlock); err != nil {
 					logger.Errorf("Error getting block with seqNum = %d due to (%+v)...dropping block", payload.SeqNum, errors.WithStack(err))
@@ -545,7 +548,6 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 					continue
 				}
 				logger.Debugf("[%s] Transferring block [%d] with %d transaction(s) to the ledger", s.chainID, payload.SeqNum, len(rawBlock.Data.Data))
-
 				// Read all private data into slice
 				var p util.PvtDataCollections
 				if payload.PrivateData != nil {
@@ -555,6 +557,10 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 						continue
 					}
 				}
+				elapsedValidateBlock := time.Since(startValidateBlock) / time.Millisecond
+				stateLogger.Infof("Validate Block %d %d ms\n", payload.SeqNum, elapsedValidateBlock)
+
+				startProcessBlock := time.Now()
 				if err := s.commitBlock(rawBlock, p); err != nil {
 					if executionErr, isExecutionErr := err.(*vsccErrors.VSCCExecutionFailureError); isExecutionErr {
 						logger.Errorf("Failed executing VSCC due to %v. Aborting chain processing", executionErr)
@@ -562,6 +568,11 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 					}
 					logger.Panicf("Cannot commit block to the ledger due to %+v", errors.WithStack(err))
 				}
+				elapsedProcessBlock := time.Since(startProcessBlock) / time.Millisecond
+				stateLogger.Infof("Process Block %d %d ms\n", payload.SeqNum, elapsedProcessBlock)
+
+				milliTimestamp := time.Now().UnixNano() / 1000000
+				stateLogger.Infof("Finish Block %d at unix mini timestamp %d\n", payload.SeqNum, milliTimestamp)
 			}
 		case <-s.stopCh:
 			s.stopCh <- struct{}{}

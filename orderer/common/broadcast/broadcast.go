@@ -8,6 +8,7 @@ package broadcast
 
 import (
 	"io"
+	"time"
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/util"
@@ -102,7 +103,8 @@ func (bh *handlerImpl) Handle(srv ab.AtomicBroadcast_BroadcastServer) error {
 
 		if !isConfig {
 			logger.Debugf("[channel: %s] Broadcast is processing normal message from %s with txid '%s' of type %s", chdr.ChannelId, addr, chdr.TxId, cb.HeaderType_name[chdr.Type])
-
+			ts := time.Now().UnixNano() / int64(time.Millisecond)
+			logger.Infof("Broadcast txn %s at %d", chdr.TxId, ts)
 			configSeq, err := processor.ProcessNormalMsg(msg)
 			if err != nil {
 				logger.Warningf("[channel: %s] Rejecting broadcast of normal message from %s because of error: %s", chdr.ChannelId, addr, err)

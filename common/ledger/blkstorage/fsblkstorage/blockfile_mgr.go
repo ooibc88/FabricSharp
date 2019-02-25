@@ -257,6 +257,7 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		)
 	}
 	blockBytes, info, err := serializeBlock(block)
+	logger.Infof("Appended Block %d Size: %d", block.Header.GetNumber(), len(blockBytes))
 	if err != nil {
 		return errors.WithMessage(err, "error serializing block")
 	}
