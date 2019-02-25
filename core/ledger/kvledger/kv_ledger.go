@@ -291,7 +291,7 @@ func (l *kvLedger) CommitWithPvtData(pvtdataAndBlock *ledger.BlockAndPvtData) er
 
 	elapsedCommitWithPvtData := time.Since(startStateValidation) / time.Millisecond // total duration in ms
 
-	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_commit=%dms state_commit=%dms)",
+	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %d ms (state_validation: %d ms block_commit: %d ms state_commit: %d ms)",
 		l.ledgerID, block.Header.Number, len(block.Data.Data), elapsedCommitWithPvtData,
 		elapsedStateValidation, elapsedCommitBlockStorage, elapsedCommitState)
 

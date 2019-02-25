@@ -229,7 +229,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txsfltr
 
 	elapsedValidation := time.Since(startValidation) / time.Millisecond // duration in ms
-	logger.Infof("[%s] Validated block [%d] in %dms", v.ChainID, block.Header.Number, elapsedValidation)
+	logger.Infof("[%s] Validated block [%d] in %d ms", v.ChainID, block.Header.Number, elapsedValidation)
 
 	return nil
 }

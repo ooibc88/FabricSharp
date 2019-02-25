@@ -161,23 +161,26 @@ func (b *blocksProviderImpl) DeliverBlocks() {
 			statusCounter = 0
 			blockNum := t.Block.Header.Number
 
+			milliTimestamp := time.Now().UnixNano() / 1000000
 			marshaledBlock, err := proto.Marshal(t.Block)
 			if err != nil {
 				logger.Errorf("[%s] Error serializing block with sequence number %d, due to %s", b.chainID, blockNum, err)
 				continue
 			}
+			startVerifyBlock := time.Now()
 			if err := b.mcs.VerifyBlock(gossipcommon.ChainID(b.chainID), blockNum, marshaledBlock); err != nil {
 				logger.Errorf("[%s] Error verifying block with sequnce number %d, due to %s", b.chainID, blockNum, err)
 				continue
 			}
-
+			elapsedVerifiedBlock := time.Since(startVerifyBlock) / time.Millisecond
+			logger.Infof("Verifying Block %d in %d ms", blockNum, elapsedVerifiedBlock)
 			numberOfPeers := len(b.gossip.PeersOfChannel(gossipcommon.ChainID(b.chainID)))
 			// Create payload with a block received
 			payload := createPayload(blockNum, marshaledBlock)
 			// Use payload to create gossip message
 			gossipMsg := createGossipMsg(b.chainID, payload)
 
-			logger.Debugf("[%s] Adding payload to local buffer, blockNum = [%d]", b.chainID, blockNum)
+			logger.Debugf("[%s] Adding payload to local buffer, blockNum = [%d] at timestamp %d", b.chainID, blockNum, milliTimestamp)
 			// Add payload to local state payloads buffer
 			if err := b.gossip.AddPayload(b.chainID, payload); err != nil {
 				logger.Warningf("Block [%d] received from ordering service wasn't added to payload buffer: %v", blockNum, err)

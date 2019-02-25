@@ -9,6 +9,7 @@ package endorser
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -118,9 +119,9 @@ type validateResult struct {
 func NewEndorserServer(privDist privateDataDistributor, s Support, pr *platforms.Registry) *Endorser {
 	e := &Endorser{
 		distributePrivateData: privDist,
-		s:                 s,
-		PlatformRegistry:  pr,
-		PvtRWSetAssembler: &rwSetAssembler{},
+		s:                     s,
+		PlatformRegistry:      pr,
+		PvtRWSetAssembler:     &rwSetAssembler{},
 	}
 	return e
 }
@@ -130,8 +131,10 @@ func (e *Endorser) callChaincode(txParams *ccprovider.TransactionParams, version
 	endorserLogger.Infof("[%s][%s] Entry chaincode: %s", txParams.ChannelID, shorttxid(txParams.TxID), cid)
 	defer func(start time.Time) {
 		logger := endorserLogger.WithOptions(zap.AddCallerSkip(1))
-		elapsedMilliseconds := time.Since(start).Round(time.Millisecond) / time.Millisecond
-		logger.Infof("[%s][%s] Exit chaincode: %s (%dms)", txParams.ChannelID, shorttxid(txParams.TxID), cid, elapsedMilliseconds)
+		elapsedMicroseconds := time.Since(start).Round(time.Microsecond) / time.Microsecond
+		if !strings.HasSuffix(cid.Name, "scc") {
+			logger.Infof("[%s] [%s] Exit chaincode: %s (%d us)", txParams.ChannelID, shorttxid(txParams.TxID), cid, elapsedMicroseconds)
+		}
 	}(time.Now())
 
 	var err error
@@ -221,7 +224,12 @@ func (e *Endorser) SimulateProposal(txParams *ccprovider.TransactionParams, cid 
 		}
 		version = cdLedger.CCVersion()
 
+		startCheckPolicy := time.Now()
 		err = e.s.CheckInstantiationPolicy(cid.Name, version, cdLedger)
+		elapsedCheckPolicy := time.Since(startCheckPolicy) / time.Microsecond
+		if !strings.HasSuffix(cid.Name, "scc") {
+			endorserLogger.Infof("Check Policy Txn [%s] in %d us", shorttxid(txParams.TxID), elapsedCheckPolicy)
+		}
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -400,12 +408,19 @@ func (e *Endorser) preProcess(signedProp *pb.SignedProposal) (*validateResult, e
 
 // ProcessProposal process the Proposal
 func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedProposal) (*pb.ProposalResponse, error) {
+	startProcessProposal := time.Now()
 	addr := util.ExtractRemoteAddress(ctx)
 	endorserLogger.Debug("Entering: request from", addr)
 	defer endorserLogger.Debug("Exit: request from", addr)
 
 	// 0 -- check and validate
+	startPreProcess := time.Now()
 	vr, err := e.preProcess(signedProp)
+	elapsedPreProcess := time.Since(startPreProcess) / time.Microsecond
+	var normalCC = !strings.HasSuffix(vr.hdrExt.ChaincodeId.Name, "scc")
+	if normalCC {
+		endorserLogger.Infof("Preprocess txn [%s] in [%d] us", shorttxid(vr.txid), elapsedPreProcess)
+	}
 	if err != nil {
 		resp := vr.resp
 		return resp, err
@@ -453,7 +468,12 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	//       to validate the supplied action before endorsing it
 
 	// 1 -- simulate
+	startSimulate := time.Now()
 	cd, res, simulationResult, ccevent, err := e.SimulateProposal(txParams, hdrExt.ChaincodeId)
+	elapsedSimulate := time.Since(startSimulate) / time.Microsecond
+	if normalCC {
+		endorserLogger.Infof("Simulate txn [%s] in %d us", shorttxid(txid), elapsedSimulate)
+	}
 	if err != nil {
 		return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 	}
@@ -485,7 +505,12 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 		pResp = &pb.ProposalResponse{Response: res}
 	} else {
 		//Note: To endorseProposal(), we pass the released txsim. Hence, an error would occur if we try to use this txsim
+		startEndorse := time.Now()
 		pResp, err = e.endorseProposal(ctx, chainID, txid, signedProp, prop, res, simulationResult, ccevent, hdrExt.PayloadVisibility, hdrExt.ChaincodeId, txsim, cd)
+		elapsedEndorse := time.Since(startEndorse) / time.Microsecond
+		if normalCC {
+			endorserLogger.Infof("Endorse txn [%s] in %d us", shorttxid(txid), elapsedEndorse)
+		}
 		if err != nil {
 			return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, nil
 		}
@@ -499,7 +524,10 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	// contains the "return value" from the
 	// chaincode invocation
 	pResp.Response = res
-
+	elapsedProcessProposal := time.Since(startProcessProposal) / time.Microsecond
+	if normalCC {
+		endorserLogger.Infof("E2E Txn [%s] Processing latency %d us with ccname %s", shorttxid(txid), elapsedProcessProposal, vr.hdrExt.ChaincodeId.Name)
+	}
 	return pResp, nil
 }
 
