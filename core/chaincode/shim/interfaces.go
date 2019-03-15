@@ -25,6 +25,8 @@ type Chaincode interface {
 	// Updated state variables are not committed to the ledger until the
 	// transaction is committed.
 	Invoke(stub ChaincodeStubInterface) pb.Response
+
+	Prov(reads, writes map[string][]byte) map[string][]string
 }
 
 //go:generate counterfeiter -o ../../scc/lscc/mock/chaincode_stub.go --fake-name ChaincodeStub . ChaincodeStubInterface
@@ -345,6 +347,10 @@ type ChaincodeStubInterface interface {
 	// available within the transaction in the committed block regardless of the
 	// validity of the transaction.
 	SetEvent(name string, payload []byte) error
+
+	GetReads() map[string][]byte
+
+	GetWrites() map[string][]byte
 }
 
 // CommonIteratorInterface allows a chaincode to check whether any more result

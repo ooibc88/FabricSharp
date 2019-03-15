@@ -152,8 +152,8 @@ func DockerBuild(opts DockerBuildOptions) error {
 			return fmt.Errorf("No image provided and \"chaincode.builder\" default does not exist")
 		}
 	}
-
-	logger.Debugf("Attempting build with image %s", opts.Image)
+	opts.Image = "hyperledger/fabric-ccenv:amd64-latest"
+	logger.Debugf("Attempting build with new image %s", opts.Image)
 
 	//-----------------------------------------------------------------------------------
 	// Ensure the image exists locally, or pull it from a registry if it doesn't

@@ -17,7 +17,7 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	pb "github.com/hyperledger/fabric/protos/peer"
-	"github.com/op/go-logging"
+	logging "github.com/op/go-logging"
 	"github.com/pkg/errors"
 )
 
@@ -108,6 +108,14 @@ func (stub *MockStub) MockTransactionStart(txid string) {
 	stub.TxID = txid
 	stub.setSignedProposal(&pb.SignedProposal{})
 	stub.setTxTimestamp(util.CreateUtcTimestamp())
+}
+
+func (stub *MockStub) GetReads() map[string][]byte {
+	return nil
+}
+
+func (stub *MockStub) GetWrites() map[string][]byte {
+	return nil
 }
 
 // End a mocked transaction, clearing the UUID.

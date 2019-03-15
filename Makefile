@@ -102,7 +102,8 @@ PROJECT_FILES = $(shell git ls-files  | grep -v ^test | grep -v ^unit-test | \
 	grep -v ^.git | grep -v ^examples | grep -v ^devenv | grep -v .png$ | \
 	grep -v ^LICENSE | grep -v ^vendor )
 RELEASE_TEMPLATES = $(shell git ls-files | grep "release/templates")
-IMAGES = peer orderer ccenv buildenv testenv tools
+#IMAGES = peer orderer ccenv buildenv testenv tools
+IMAGES = ccenv
 RELEASE_PLATFORMS = windows-amd64 darwin-amd64 linux-amd64 linux-s390x
 RELEASE_PKGS = configtxgen cryptogen idemixgen discover configtxlator peer orderer
 

@@ -73,3 +73,7 @@ func (scc *SCC) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return shim.Error(fmt.Sprintf("unknown lifecycle function: %s", funcName))
 	}
 }
+
+func (scc *SCC) Prov(reads, writes map[string][]byte) map[string][]string {
+	return nil
+}

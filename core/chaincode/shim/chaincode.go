@@ -66,6 +66,8 @@ type ChaincodeStub struct {
 	binding   []byte
 
 	decorations map[string][]byte
+	reads       map[string][]byte
+	writes      map[string][]byte
 }
 
 // Peer address derived from command line or env var
@@ -397,6 +399,8 @@ func (stub *ChaincodeStub) init(handler *Handler, channelId string, txid string,
 	stub.signedProposal = signedProposal
 	stub.decorations = input.Decorations
 	stub.validationParameterMetakey = pb.MetaDataKeys_VALIDATION_PARAMETER.String()
+	stub.reads = make(map[string][]byte)
+	stub.writes = make(map[string][]byte)
 
 	// TODO: sanity check: verify that every call to init with a nil
 	// signedProposal is a legitimate one, meaning it is an internal call
@@ -422,6 +426,14 @@ func (stub *ChaincodeStub) init(handler *Handler, channelId string, txid string,
 	}
 
 	return nil
+}
+
+func (stub *ChaincodeStub) GetReads() map[string][]byte {
+	return stub.reads
+}
+
+func (stub *ChaincodeStub) GetWrites() map[string][]byte {
+	return stub.writes
 }
 
 // GetTxID returns the transaction ID for the proposal
@@ -455,7 +467,11 @@ func (stub *ChaincodeStub) InvokeChaincode(chaincodeName string, args [][]byte, 
 func (stub *ChaincodeStub) GetState(key string) ([]byte, error) {
 	// Access public data by setting the collection to empty string
 	collection := ""
-	return stub.handler.handleGetState(collection, key, stub.ChannelId, stub.TxID)
+	val, err := stub.handler.handleGetState(collection, key, stub.ChannelId, stub.TxID)
+	if err == nil {
+		stub.reads[key] = val
+	}
+	return val, err
 }
 
 // SetStateValidationParameter documentation can be found in interfaces.go
@@ -482,7 +498,11 @@ func (stub *ChaincodeStub) PutState(key string, value []byte) error {
 	}
 	// Access public data by setting the collection to empty string
 	collection := ""
-	return stub.handler.handlePutState(collection, key, value, stub.ChannelId, stub.TxID)
+	err := stub.handler.handlePutState(collection, key, value, stub.ChannelId, stub.TxID)
+	if err == nil {
+		stub.writes[key] = value
+	}
+	return err
 }
 
 func (stub *ChaincodeStub) createStateQueryIterator(response *pb.QueryResponse) *StateQueryIterator {

@@ -35,6 +35,9 @@ func (e *LedgerQuerier) Chaincode() shim.Chaincode { return e }
 func (e *LedgerQuerier) InvokableExternal() bool   { return true }
 func (e *LedgerQuerier) InvokableCC2CC() bool      { return true }
 func (e *LedgerQuerier) Enabled() bool             { return true }
+func (e *LedgerQuerier) Prov(reads, writes map[string][]byte) map[string][]string {
+	return nil
+}
 
 // LedgerQuerier implements the ledger query functions, including:
 // - GetChainInfo returns BlockchainInfo
