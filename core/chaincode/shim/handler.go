@@ -272,6 +272,15 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage, errc chan er
 		}
 		res := handler.cc.Invoke(stub)
 
+		// args := make([]string, 0)
+		// for _, inp := range input.Args {
+		// 	args = append(args, string(inp))
+		// }
+		// chaincodeLogger.Infof("Invoke cc with args [%v]: ", args)
+		if err := handler.handlePutState("", "test_prov", []byte("prov"), stub.ChannelId, stub.TxID); err != nil {
+			chaincodeLogger.Info("Put Provenance fails...")
+		}
+
 		// Endorser will handle error contained in Response.
 		resBytes, err := proto.Marshal(&res)
 		if nextStateMsg = errFunc(err, stub.chaincodeEvent, "[%s] Transaction execution failed. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_ERROR.String()); nextStateMsg != nil {
@@ -372,6 +381,7 @@ func (handler *Handler) handleGetStateMetadata(collection string, key string, ch
 // handlePutState communicates with the peer to put state information into the ledger.
 func (handler *Handler) handlePutState(collection string, key string, value []byte, channelId string, txid string) error {
 	// Construct payload for PUT_STATE
+	chaincodeLogger.Infof("Put Key %s with value %s", key, string(value))
 	payloadBytes, _ := proto.Marshal(&pb.PutState{Collection: collection, Key: key, Value: value})
 
 	msg := &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_PUT_STATE, Payload: payloadBytes, Txid: txid, ChannelId: channelId}
