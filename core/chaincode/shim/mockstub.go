@@ -118,6 +118,18 @@ func (stub *MockStub) GetWrites() map[string][]byte {
 	return nil
 }
 
+func (stub *MockStub) Hist(key string, blk uint64) (string, uint64, error) {
+	return "", 0, nil
+}
+
+func (stub *MockStub) Backward(key string, blk uint64) ([]string, []uint64, string, error) {
+	return nil, nil, "", nil
+}
+
+func (stub *MockStub) Forward(key string, blk uint64) ([]string, []uint64, []string, error) {
+	return nil, nil, nil, nil
+}
+
 // End a mocked transaction, clearing the UUID.
 func (stub *MockStub) MockTransactionEnd(uuid string) {
 	stub.signedProposal = nil

@@ -29,6 +29,26 @@ type Chaincode interface {
 	Prov(reads, writes map[string][]byte) map[string][]string
 }
 
+type HistResult struct {
+	Msg        string
+	Val        string
+	CreatedBlk uint64
+}
+
+type BackwardResult struct {
+	Msg       string
+	DepKeys   []string
+	DepBlkIdx []uint64
+	TxnID     string
+}
+
+type ForwardResult struct {
+	Msg           string
+	ForwardKeys   []string
+	ForwardBlkIdx []uint64
+	ForwardTxnIDs []string
+}
+
 //go:generate counterfeiter -o ../../scc/lscc/mock/chaincode_stub.go --fake-name ChaincodeStub . ChaincodeStubInterface
 //go:generate counterfeiter -o ../../chaincode/lifecycle/mock/chaincode_stub.go --fake-name ChaincodeStub . ChaincodeStubInterface
 
@@ -351,6 +371,12 @@ type ChaincodeStubInterface interface {
 	GetReads() map[string][]byte
 
 	GetWrites() map[string][]byte
+
+	Hist(key string, blk uint64) (string, uint64, error)
+
+	Backward(key string, blk uint64) ([]string, []uint64, string, error)
+
+	Forward(key string, blk uint64) ([]string, []uint64, []string, error)
 }
 
 // CommonIteratorInterface allows a chaincode to check whether any more result

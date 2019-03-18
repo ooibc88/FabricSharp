@@ -41,10 +41,8 @@ type Handler struct {
 	//need lock to protect chaincode from attempting
 	//concurrent requests to the peer
 	sync.Mutex
-
 	//shim to peer grpc serializer. User only in serialSend
 	serialLock sync.Mutex
-
 	To         string
 	ChatStream PeerChaincodeStream
 	cc         Chaincode
@@ -255,7 +253,6 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage, errc chan er
 			}
 			return nil
 		}
-
 		// Get the function and args from Payload
 		input := &pb.ChaincodeInput{}
 		unmarshalErr := proto.Unmarshal(msg.Payload, input)
@@ -270,7 +267,6 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage, errc chan er
 		if nextStateMsg = errFunc(err, stub.chaincodeEvent, "[%s] Transaction execution failed. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_ERROR.String()); nextStateMsg != nil {
 			return
 		}
-		fmt.Println("I am here")
 		res := handler.cc.Invoke(stub)
 
 		// args := make([]string, 0)
@@ -282,7 +278,7 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage, errc chan er
 			depList := ""
 			for k, deps := range prov {
 				for _, dep := range deps {
-					depList = depList + dep + " "
+					depList = depList + dep + "_"
 				}
 				provKey := k + "_prov"
 				if err := handler.handlePutState("", provKey, []byte(depList), stub.ChannelId, stub.TxID); err != nil {

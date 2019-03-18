@@ -121,36 +121,37 @@ func (vdb *versionedDB) GetStateMultipleKeys(namespace string, keys []string) ([
 // startKey is inclusive
 // endKey is exclusive
 func (vdb *versionedDB) GetStateRangeScanIterator(namespace string, startKey string, endKey string) (statedb.ResultsIterator, error) {
-	return vdb.GetStateRangeScanIteratorWithMetadata(namespace, startKey, endKey, nil)
+	return nil, errors.New("GetStateRangeScanIterator not supported for leveldb")
+	// return vdb.GetStateRangeScanIteratorWithMetadata(namespace, startKey, endKey, nil)
 }
 
 const optionLimit = "limit"
 
 // GetStateRangeScanIteratorWithMetadata implements method in VersionedDB interface
 func (vdb *versionedDB) GetStateRangeScanIteratorWithMetadata(namespace string, startKey string, endKey string, metadata map[string]interface{}) (statedb.QueryResultsIterator, error) {
+	return nil, errors.New("GetStateRangeScanIteratorWithMetadata not supported for leveldb")
+	// requestedLimit := int32(0)
+	// // if metadata is provided, validate and apply options
+	// if metadata != nil {
+	// 	//validate the metadata
+	// 	err := statedb.ValidateRangeMetadata(metadata)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if limitOption, ok := metadata[optionLimit]; ok {
+	// 		requestedLimit = limitOption.(int32)
+	// 	}
+	// }
 
-	requestedLimit := int32(0)
-	// if metadata is provided, validate and apply options
-	if metadata != nil {
-		//validate the metadata
-		err := statedb.ValidateRangeMetadata(metadata)
-		if err != nil {
-			return nil, err
-		}
-		if limitOption, ok := metadata[optionLimit]; ok {
-			requestedLimit = limitOption.(int32)
-		}
-	}
+	// // Note:  metadata is not used for the goleveldb implementation of the range query
+	// compositeStartKey := constructCompositeKey(namespace, startKey)
+	// compositeEndKey := constructCompositeKey(namespace, endKey)
+	// if endKey == "" {
+	// 	compositeEndKey[len(compositeEndKey)-1] = lastKeyIndicator
+	// }
+	// dbItr := vdb.db.GetIterator(compositeStartKey, compositeEndKey)
 
-	// Note:  metadata is not used for the goleveldb implementation of the range query
-	compositeStartKey := constructCompositeKey(namespace, startKey)
-	compositeEndKey := constructCompositeKey(namespace, endKey)
-	if endKey == "" {
-		compositeEndKey[len(compositeEndKey)-1] = lastKeyIndicator
-	}
-	dbItr := vdb.db.GetIterator(compositeStartKey, compositeEndKey)
-
-	return newKVScanner(namespace, dbItr, requestedLimit), nil
+	// return newKVScanner(namespace, dbItr, requestedLimit), nil
 
 }
 
@@ -172,7 +173,12 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 		updates := batch.GetUpdates(ns)
 		for k, vv := range updates {
 			compositeKey := constructCompositeKey(ns, k)
-			logger.Infof("ApplyUpdates: Channel [%s]: Applying key(string)=[%s] value(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Value))
+			if vv.Metadata == nil {
+				logger.Info("Empty meta...")
+			} else {
+				logger.Infof("Non-Empty meta... [%v]", vv.Metadata)
+			}
+			logger.Infof("ApplyUpdates: Channel [%s]: Applying key(string)=[%s] meta(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Metadata))
 
 			if vv.Value == nil {
 				dbBatch.Delete(compositeKey)

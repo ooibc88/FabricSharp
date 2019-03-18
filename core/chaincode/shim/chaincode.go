@@ -10,11 +10,13 @@ package shim
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -436,6 +438,56 @@ func (stub *ChaincodeStub) GetWrites() map[string][]byte {
 	return stub.writes
 }
 
+func (stub *ChaincodeStub) Hist(key string, blk uint64) (string, uint64, error) {
+	queryKey := key + "_" + strconv.Itoa(int(blk)) + "_hist"
+
+	if val, err := stub.GetState(queryKey); err != nil {
+		return "", 0, err
+	} else {
+		result := HistResult{}
+		if err := json.Unmarshal(val, &result); err != nil {
+			return "", 0, err
+		} else if len(result.Msg) > 0 {
+			return "", 0, errors.New("Fail for the historical query with msg " + result.Msg)
+		} else {
+			return result.Val, result.CreatedBlk, nil
+		}
+	}
+}
+
+func (stub *ChaincodeStub) Backward(key string, blk uint64) ([]string, []uint64, string, error) {
+	queryKey := key + "_" + strconv.Itoa(int(blk)) + "_backward"
+
+	if val, err := stub.GetState(queryKey); err != nil {
+		return nil, nil, "", err
+	} else {
+		result := BackwardResult{}
+		if err := json.Unmarshal(val, &result); err != nil {
+			return nil, nil, "", err
+		} else if len(result.Msg) > 0 {
+			return nil, nil, "", errors.New("Fail for the backward query with msg " + result.Msg)
+		} else {
+			return result.DepKeys, result.DepBlkIdx, result.TxnID, nil
+		}
+	}
+}
+
+func (stub *ChaincodeStub) Forward(key string, blk uint64) ([]string, []uint64, []string, error) {
+	queryKey := key + "_" + strconv.Itoa(int(blk)) + "_forward"
+	if val, err := stub.GetState(queryKey); err != nil {
+		return nil, nil, nil, err
+	} else {
+		result := ForwardResult{}
+		if err := json.Unmarshal(val, &result); err != nil {
+			return nil, nil, nil, err
+		} else if len(result.Msg) > 0 {
+			return nil, nil, nil, errors.New("Fail for the forward query with msg " + result.Msg)
+		} else {
+			return result.ForwardKeys, result.ForwardBlkIdx, result.ForwardTxnIDs, nil
+		}
+	}
+}
+
 // GetTxID returns the transaction ID for the proposal
 func (stub *ChaincodeStub) GetTxID() string {
 	return stub.TxID
@@ -468,7 +520,8 @@ func (stub *ChaincodeStub) GetState(key string) ([]byte, error) {
 	// Access public data by setting the collection to empty string
 	collection := ""
 	val, err := stub.handler.handleGetState(collection, key, stub.ChannelId, stub.TxID)
-	if err == nil {
+	if !strings.HasSuffix(key, "_hist") && !strings.HasSuffix(key, "_backward") &&
+		!strings.HasSuffix(key, "_forward") && err == nil {
 		stub.reads[key] = val
 	}
 	return val, err
