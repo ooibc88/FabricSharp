@@ -71,6 +71,10 @@ type VersionedDB interface {
 	Open() error
 	// Close closes the db
 	Close()
+
+	RetrieveLatestSnapshot() uint64
+	ReleaseSnapshot(snapshot uint64) bool
+	GetSnapshotState(snapshot uint64, namespace string, key string) (*VersionedValue, error)
 }
 
 //BulkOptimizable interface provides additional functions for

@@ -332,6 +332,18 @@ func (fake *VersionedDB) GetStateMultipleKeysReturnsOnCall(i int, result1 []*sta
 	}{result1, result2}
 }
 
+func (fake *VersionedDB) RetrieveLatestSnapshot() uint64 {
+	return 0
+}
+
+func (fake *VersionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	return false
+}
+
+func (fake *VersionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	return nil, nil
+}
+
 func (fake *VersionedDB) GetStateRangeScanIterator(namespace string, startKey string, endKey string) (statedb.ResultsIterator, error) {
 	fake.getStateRangeScanIteratorMutex.Lock()
 	ret, specificReturn := fake.getStateRangeScanIteratorReturnsOnCall[len(fake.getStateRangeScanIteratorArgsForCall)]

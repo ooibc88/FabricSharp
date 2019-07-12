@@ -8,7 +8,6 @@ package multichannel
 
 import (
 	"sync"
-	"time"
 
 	newchannelconfig "github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
@@ -73,14 +72,10 @@ func (bw *BlockWriter) CreateNextBlock(messages []*cb.Envelope) *cb.Block {
 	}
 
 	var err error
-	ts := time.Now().UnixNano() / int64(time.Millisecond)
 	for i, msg := range messages {
 		data.Data[i], err = proto.Marshal(msg)
 		if err != nil {
 			logger.Panicf("Could not marshal envelope: %s", err)
-		}
-		if chdr, err := utils.ChannelHeader(msg); err == nil {
-			logger.Debugf("Batched Txn %s at %d", chdr.TxId, ts)
 		}
 	}
 

@@ -10,6 +10,9 @@ import (
 	"github.com/hyperledger/fabric/common/crypto"
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/sharpscheduler"
+	oc "github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/orderer/common/msgprocessor"
 	"github.com/hyperledger/fabric/orderer/consensus"
 	cb "github.com/hyperledger/fabric/protos/common"
@@ -44,11 +47,18 @@ func newChainSupport(
 		logger.Fatalf("[channel: %s] Error extracting orderer metadata: %s", ledgerResources.ConfigtxValidator().ChainID(), err)
 	}
 
+	var scheduler scheduler.Scheduler
+	if schedulerType := oc.MustGetSchedulerType(); schedulerType == oc.FoccSharp {
+		scheduler = sharpscheduler.NewTxnScheduler()
+	} else {
+		panic("unrecognized scheduler type...")
+	}
+
 	// Construct limited support needed as a parameter for additional support
 	cs := &ChainSupport{
 		ledgerResources: ledgerResources,
 		LocalSigner:     signer,
-		cutter:          blockcutter.NewReceiverImpl(ledgerResources),
+		cutter:          blockcutter.NewReceiverImpl(ledgerResources, scheduler),
 	}
 
 	// Set up the msgprocessor

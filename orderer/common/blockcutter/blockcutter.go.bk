@@ -1,0 +1,407 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package blockcutter
+
+import (
+	"strings"
+	"time"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric/common/channelconfig"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
+	"github.com/hyperledger/fabric/orderer/common/resolver"
+	cb "github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
+	"github.com/hyperledger/fabric/protos/peer"
+	"github.com/hyperledger/fabric/protos/utils"
+
+	"github.com/hyperledger/fabric/common/flogging"
+)
+
+const pkgLogID = "orderer/common/blockcutter"
+
+var logger = flogging.MustGetLogger(pkgLogID)
+
+type OrdererConfigFetcher interface {
+	OrdererConfig() (channelconfig.Orderer, bool)
+}
+
+// Receiver defines a sink for the ordered broadcast messages
+type Receiver interface {
+	// Ordered should be invoked sequentially as messages are ordered
+	// Each batch in `messageBatches` will be wrapped into a block.
+	// `pending` indicates if there are still messages pending in the receiver.
+	Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, pending bool)
+
+	// Cut returns the current batch and starts a new one
+	Cut() []*cb.Envelope
+
+	// Process the transaction and index the read range and write set
+	// Used to resolve transactional dependencies within the batch.
+	ProcessTransaction(msg *cb.Envelope)
+
+	// Process the current block and return (valid, invalid) two blocks.
+	ProcessBlock() ([]*cb.Envelope, []*cb.Envelope)
+}
+
+type receiver struct {
+	txCounter       uint32
+	maxMessageCount uint32
+	invalid         []bool
+	keyVersionMap   map[uint32]*kvrwset.Version
+	keyTxMap        map[uint32][]uint32
+
+	startReadKeyTxMap      map[string][]uint32
+	endReadKeyTxMap        map[string][]uint32
+	startReadKeyRangeIdMap map[string][]uint32
+	endReadKeyRangeIdMap   map[string][]uint32
+	maxRangeId             uint32
+	txWriteKeyMap          map[uint32][]string
+
+	uniqueKeyCounter uint32
+	uniqueKeyMap     map[string]uint32
+
+	sharedConfigFetcher   OrdererConfigFetcher
+	pendingBatch          []*cb.Envelope
+	pendingBatchSizeBytes uint32
+}
+
+// NewReceiverImpl creates a Receiver implementation based on the given configtxorderer manager
+func NewReceiverImpl(sharedConfigFetcher OrdererConfigFetcher) Receiver {
+	ordererConfig, ok := sharedConfigFetcher.OrdererConfig()
+
+	if !ok {
+		logger.Panicf("Could not retrieve orderer config to query batch parameters, block cutting is not possible")
+	}
+
+	batchSize := ordererConfig.BatchSize()
+
+	return &receiver{
+		txCounter:       0,
+		maxMessageCount: batchSize.MaxMessageCount,
+
+		invalid:       make([]bool, batchSize.MaxMessageCount),
+		keyVersionMap: make(map[uint32]*kvrwset.Version),
+		keyTxMap:      make(map[uint32][]uint32),
+
+		startReadKeyTxMap: make(map[string][]uint32),
+		endReadKeyTxMap:   make(map[string][]uint32),
+
+		startReadKeyRangeIdMap: make(map[string][]uint32),
+		endReadKeyRangeIdMap:   make(map[string][]uint32),
+		maxRangeId:             0,
+		txWriteKeyMap:          make(map[uint32][]string),
+
+		uniqueKeyCounter: 0,
+		uniqueKeyMap:     make(map[string]uint32),
+
+		sharedConfigFetcher:   sharedConfigFetcher,
+		pendingBatch:          make([]*cb.Envelope, batchSize.MaxMessageCount),
+		pendingBatchSizeBytes: 0,
+	}
+}
+
+// Ordered should be invoked sequentially as messages are ordered
+//
+// messageBatches length: 0, pending: false
+//   - impossible, as we have just received a message
+// messageBatches length: 0, pending: true
+//   - no batch is cut and there are messages pending
+// messageBatches length: 1, pending: false
+//   - the message count reaches BatchSize.MaxMessageCount
+// messageBatches length: 1, pending: true
+//   - the current message will cause the pending batch size in bytes to exceed BatchSize.PreferredMaxBytes.
+// messageBatches length: 2, pending: false
+//   - the current message size in bytes exceeds BatchSize.PreferredMaxBytes, therefore isolated in its own batch.
+// messageBatches length: 2, pending: true
+//   - impossible
+//
+// Note that messageBatches can not be greater than 2.
+func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, pending bool) {
+	ordererConfig, ok := r.sharedConfigFetcher.OrdererConfig()
+	if !ok {
+		logger.Panicf("Could not retrieve orderer config to query batch parameters, block cutting is not possible")
+	}
+	batchSize := ordererConfig.BatchSize()
+
+	messageSizeBytes := messageSizeBytes(msg)
+	if messageSizeBytes > batchSize.PreferredMaxBytes {
+		logger.Debugf("The current message, with %v bytes, is larger than the preferred batch size of %v bytes and will be isolated.", messageSizeBytes, batchSize.PreferredMaxBytes)
+
+		// cut pending batch, if it has any messages
+		if len(r.pendingBatch) > 0 {
+			messageBatch := r.Cut()
+			messageBatches = append(messageBatches, messageBatch)
+		}
+
+		// create new batch with single message
+		messageBatches = append(messageBatches, []*cb.Envelope{msg})
+
+		return
+	}
+
+	messageWillOverflowBatchSizeBytes := r.pendingBatchSizeBytes+messageSizeBytes > batchSize.PreferredMaxBytes
+
+	if messageWillOverflowBatchSizeBytes {
+		logger.Debugf("The current message, with %v bytes, will overflow the pending batch of %v bytes.", messageSizeBytes, r.pendingBatchSizeBytes)
+		logger.Debugf("Pending batch would overflow if current message is added, cutting batch now.")
+		messageBatch := r.Cut()
+		messageBatches = append(messageBatches, messageBatch)
+	}
+
+	logger.Debugf("Index txn's read range and write set")
+	r.ProcessTransaction(msg)
+
+	logger.Debugf("Enqueuing message into batch")
+	r.pendingBatch = append(r.pendingBatch, msg)
+	r.pendingBatchSizeBytes += messageSizeBytes
+	pending = true
+
+	if uint32(len(r.pendingBatch)) >= batchSize.MaxMessageCount {
+		logger.Debugf("Batch size met, cutting batch")
+		messageBatch := r.Cut()
+		messageBatches = append(messageBatches, messageBatch)
+		pending = false
+	}
+
+	return
+}
+
+func (r *receiver) ProcessTransaction(msg *cb.Envelope) {
+	tid := r.txCounter
+	data := make([]byte, messageSizeBytes(msg))
+	var err error
+	if data, err = proto.Marshal(msg); err != nil {
+		panic("Can not marshal the txn")
+	}
+	var resppayload *peer.ChaincodeAction
+	if resppayload, err = utils.GetActionFromEnvelope(data); err != nil {
+		panic("Fail to get action from the txn envelop")
+	}
+
+	txRWSet := &rwsetutil.TxRwSet{}
+	if err := txRWSet.FromProtoBytes(resppayload.Results); err != nil {
+		panic("Fail to retrieve rwset from txn payload")
+	}
+
+	for _, ns := range txRWSet.NsRwSets[1:] {
+		for _, write := range ns.KvRwSet.Writes {
+			writeKey := write.GetKey()
+
+			// check if the key exists
+			if _, ok := r.uniqueKeyMap[writeKey]; ok == false {
+				// if the key is not found, insert and increment
+				// the key counter
+				r.uniqueKeyMap[writeKey] = r.uniqueKeyCounter
+				// key = r.uniqueKeyCounter
+				r.uniqueKeyCounter++
+			}
+			// index the txid with respect to write key
+			r.txWriteKeyMap[tid] = append(r.txWriteKeyMap[tid], writeKey)
+		}
+
+		for _, read := range ns.KvRwSet.Reads {
+			readKey := read.GetKey()
+			readVer := read.GetVersion()
+			key, ok := r.uniqueKeyMap[readKey]
+			if ok == false {
+				// if the key is not found, it is inserted. So increment
+				// the key counter
+				r.uniqueKeyMap[readKey] = r.uniqueKeyCounter
+				key = r.uniqueKeyCounter
+				r.uniqueKeyCounter++
+			}
+
+			ver, ok := r.keyVersionMap[key]
+			if ok {
+				if ver.BlockNum == readVer.BlockNum && ver.TxNum == readVer.TxNum {
+					r.keyTxMap[key] = append(r.keyTxMap[key], tid)
+				} else {
+					// It seems to abort the previous txns with for the unmatched version
+					for _, tx := range r.keyTxMap[key] {
+						r.invalid[tx] = true
+					}
+					r.keyTxMap[key] = nil
+				}
+			} else {
+				r.keyTxMap[key] = append(r.keyTxMap[key], tid)
+				r.keyVersionMap[key] = readVer
+			}
+
+			// index the txid with respect to read key and read range
+			r.startReadKeyTxMap[readKey] = append(r.startReadKeyTxMap[readKey], tid)
+			r.endReadKeyTxMap[readKey] = append(r.endReadKeyTxMap[readKey], tid)
+			r.startReadKeyRangeIdMap[readKey] = append(r.startReadKeyRangeIdMap[readKey], 0)
+			r.endReadKeyRangeIdMap[readKey] = append(r.endReadKeyRangeIdMap[readKey], 0)
+		}
+
+		for rangeId, rangeQueryInfo := range ns.KvRwSet.RangeQueriesInfo {
+			startKey := rangeQueryInfo.StartKey
+			endKey := rangeQueryInfo.EndKey
+			r.startReadKeyTxMap[startKey] = append(r.startReadKeyTxMap[startKey], tid)
+			r.endReadKeyTxMap[endKey] = append(r.endReadKeyTxMap[endKey], tid)
+
+			// rangeId = 0 is used to indicate keys in read set.
+			r.startReadKeyRangeIdMap[startKey] = append(r.startReadKeyRangeIdMap[startKey], uint32(rangeId+1))
+			r.endReadKeyRangeIdMap[endKey] = append(r.startReadKeyRangeIdMap[endKey], uint32(rangeId+1))
+			if r.maxRangeId < uint32(rangeId+1) {
+				r.maxRangeId = uint32(rangeId + 1)
+			}
+		}
+	}
+	r.txCounter++
+}
+
+// Cut returns the current batch and starts a new one
+func (r *receiver) Cut() []*cb.Envelope {
+	// batch := r.pendingBatch
+	validBatch, _ := r.ProcessBlock()
+	r.pendingBatch = nil
+	r.pendingBatchSizeBytes = 0
+	r.txCounter = 0
+
+	r.uniqueKeyCounter = 0
+	r.uniqueKeyMap = make(map[string]uint32)
+
+	r.startReadKeyTxMap = make(map[string][]uint32)
+	r.endReadKeyTxMap = make(map[string][]uint32)
+	r.startReadKeyRangeIdMap = make(map[string][]uint32)
+	r.endReadKeyRangeIdMap = make(map[string][]uint32)
+	r.maxRangeId = 0
+
+	r.txWriteKeyMap = make(map[uint32][]string)
+
+	r.invalid = make([]bool, r.maxMessageCount)
+	r.keyVersionMap = make(map[uint32]*kvrwset.Version)
+	r.keyTxMap = nil
+	return validBatch
+}
+
+func (r *receiver) ProcessBlock() ([]*cb.Envelope, []*cb.Envelope) {
+	usBase := int64(1000)
+	startProcessBlkTS := time.Now()
+	if len(r.pendingBatch) <= 1 {
+		return r.pendingBatch, nil
+	}
+
+	graph := make([][]int32, r.txCounter)
+	matrix_graph := make([][]bool, r.txCounter)
+	invgraph := make([][]int32, r.txCounter)
+	for i := uint32(0); i < r.txCounter; i++ {
+		graph[i] = make([]int32, 0, r.txCounter)
+		invgraph[i] = make([]int32, 0, r.txCounter)
+		matrix_graph[i] = make([]bool, r.txCounter)
+	}
+
+	for writeTxId := uint32(0); writeTxId < r.txCounter; writeTxId++ {
+		if r.invalid[writeTxId] {
+			continue
+		}
+
+		for _, writeKey := range r.txWriteKeyMap[writeTxId] {
+			// set to true if that particular range's startKey is smaller than any of a writeKey
+			//   Hence, a writeKey is possible to fall into the startKeyRange
+			var mayWithinTxIdRanges [][]bool = make([][]bool, r.txCounter)
+			for i := range mayWithinTxIdRanges {
+				mayWithinTxIdRanges[i] = make([]bool, r.maxRangeId+1)
+			}
+
+			for startReadKey, readTxIDs := range r.startReadKeyTxMap {
+				// startReadKey <= writeKey
+				if strings.Compare(startReadKey, writeKey) <= 0 {
+					if startKeyRangeIds, ok := r.startReadKeyRangeIdMap[startReadKey]; ok {
+						// startKeyRangeIds and txID has the same length and share the same index
+						for i, readTxId := range readTxIDs {
+							if r.invalid[readTxId] {
+								continue
+							}
+							if startKeyRangeIds[i] == 0 {
+								// txn j's writeset collides with txn i's readset
+								// There must be a conflict.
+								matrix_graph[writeTxId][readTxId] = true
+							} else {
+								// txn j's writeset may collide with txn i's read range
+								rangeId := startKeyRangeIds[i]
+								mayWithinTxIdRanges[readTxId][rangeId] = true
+							}
+						}
+					} else {
+						panic("Fail to find startReadKeyRangeId for key " + startReadKey)
+					}
+				}
+			} // end for startReadKey
+
+			for endReadKey, readTxIDs := range r.endReadKeyTxMap {
+				// writeKey < endReadKey
+				if strings.Compare(writeKey, endReadKey) < 0 {
+					// endKeyRangeIds and txID has the same length and share the same index
+					if endKeyRangeIds, ok := r.endReadKeyRangeIdMap[endReadKey]; ok {
+						for i, readTxId := range readTxIDs {
+							rangeId := endKeyRangeIds[i]
+							if mayWithinTxIdRanges[readTxId][rangeId] {
+								matrix_graph[writeTxId][readTxId] = true
+							}
+						} // end for
+					} else {
+						panic("Fail to find endReadKeyRangeIdMap for key " + endReadKey)
+					}
+
+				}
+			}
+
+		} // end for writeKey
+
+		// for k := uint32(0); k < (r.maxUniqueKeys / 64); k++ {
+		// 	if (r.txWriteSet[i][k] & r.txReadSet[j][k]) != 0 {
+		// 		// Txn j must be scheduled before txn i
+		// 		graph[i] = append(graph[i], j)
+		// 		invgraph[j] = append(invgraph[j], i)
+		// 		break
+		// 	}
+		// }
+	}
+	// Use matrix_graph to translate into graph and invgraph, later to be consumed by resolver.
+	for i := uint32(0); i < r.txCounter; i++ {
+		for j := uint32(0); j < r.txCounter; j++ {
+			if matrix_graph[i][j] {
+				ii := int32(i)
+				jj := int32(j)
+				graph[ii] = append(graph[ii], jj)
+				invgraph[jj] = append(graph[jj], ii)
+			}
+		}
+	}
+	establishDepElapsed := time.Since(startProcessBlkTS).Nanoseconds() / usBase
+	startResolveDep := time.Now()
+	resGen := resolver.NewResolver(&graph, &invgraph)
+
+	res, _ := resGen.GetSchedule()
+	lenres := len(res)
+
+	resGen = nil
+	graph = nil
+	invgraph = nil
+
+	validBatch := make([]*cb.Envelope, lenres)
+
+	for i := 0; i < lenres; i++ {
+		validBatch[i] = r.pendingBatch[res[lenres-1-i]]
+	}
+	resolveDepElapsed := time.Since(startResolveDep).Nanoseconds() / usBase
+	processBlkElapsed := time.Since(startProcessBlkTS).Nanoseconds() / usBase
+
+	// log some information
+	logger.Debugf("schedule-> %v", res)
+	logger.Infof("oldBlockSize:%d, newBlockSize:%d", len(r.pendingBatch), len(validBatch))
+	logger.Infof("Establish Dep: %d us, Resolve Dep: %d us, Total: %d us", establishDepElapsed, resolveDepElapsed, processBlkElapsed)
+
+	return validBatch, nil
+}
+
+func messageSizeBytes(message *cb.Envelope) uint32 {
+	return uint32(len(message.Payload) + len(message.Signature))
+}

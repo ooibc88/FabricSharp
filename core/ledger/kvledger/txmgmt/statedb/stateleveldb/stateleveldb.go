@@ -83,6 +83,28 @@ func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.Version
 	logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)
 	compositeKey := constructCompositeKey(namespace, key)
 	dbVal, err := vdb.db.Get(compositeKey)
+	// dbVal, err := vdb.db.SnapshotGet(compositeKey)
+	if err != nil {
+		return nil, err
+	}
+	if dbVal == nil {
+		return nil, nil
+	}
+	return decodeValue(dbVal)
+}
+
+func (vdb *versionedDB) RetrieveLatestSnapshot() uint64 {
+	return vdb.db.RetrieveLatestSnapshot()
+}
+
+func (vdb *versionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	return vdb.db.ReleaseSnapshot(snapshot)
+}
+
+func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	compositeKey := constructCompositeKey(namespace, key)
+	// dbVal, err := vdb.db.Get(compositeKey)
+	dbVal, err := vdb.db.SnapshotGet(snapshot, compositeKey)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +212,8 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	dbBatch.Put(savePointKey, height.ToBytes())
 	logger.Debugf("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
 	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
-	if err := vdb.db.WriteBatch(dbBatch, true); err != nil {
+	// if err := vdb.db.WriteBatch(dbBatch, true); err != nil {
+	if err := vdb.db.SnapshotWriteBatch(dbBatch, height.BlockNum, true); err != nil {
 		return err
 	}
 	return nil

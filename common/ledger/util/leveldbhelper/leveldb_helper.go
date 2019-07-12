@@ -8,7 +8,10 @@ package leveldbhelper
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/util"
@@ -33,12 +36,20 @@ type Conf struct {
 	DBPath string
 }
 
+type CountSnapshot struct {
+	count    uint64
+	snapshot *leveldb.Snapshot
+}
+
 // DB - a wrapper on an actual store
 type DB struct {
 	conf    *Conf
 	db      *leveldb.DB
 	dbState dbState
 	mux     sync.Mutex
+
+	countSnapshotMap sync.Map
+	lastSnapshot     uint64
 
 	readOpts        *opt.ReadOptions
 	writeOptsNoSync *opt.WriteOptions
@@ -56,6 +67,7 @@ func CreateDB(conf *Conf) *DB {
 		conf:            conf,
 		dbState:         closed,
 		readOpts:        readOpts,
+		lastSnapshot:    0,
 		writeOptsNoSync: writeOptsNoSync,
 		writeOptsSync:   writeOptsSync}
 }
@@ -78,7 +90,31 @@ func (dbInst *DB) Open() {
 	if dbInst.db, err = leveldb.OpenFile(dbPath, dbOpts); err != nil {
 		panic(fmt.Sprintf("Error opening leveldb: %s", err))
 	}
+	if firstSnapshot, err := dbInst.db.GetSnapshot(); err != nil {
+		panic(fmt.Sprintf("Error creating snapshot: %s", err))
+	} else {
+		dbInst.countSnapshotMap.Store(dbInst.lastSnapshot, &CountSnapshot{count: 0, snapshot: firstSnapshot})
+	}
 	dbInst.dbState = opened
+
+	go func() {
+		for {
+			toRemoved := []uint64{}
+			count := 0
+			dbInst.countSnapshotMap.Range(func(key, value interface{}) bool {
+				if value.(*CountSnapshot).count == 0 && key.(uint64) < atomic.LoadUint64(&dbInst.lastSnapshot) {
+					toRemoved = append(toRemoved, key.(uint64))
+				}
+				count++
+				return true
+			})
+
+			for _, r := range toRemoved {
+				dbInst.countSnapshotMap.Delete(r)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
 }
 
 // Close closes the underlying db
@@ -106,6 +142,46 @@ func (dbInst *DB) Get(key []byte) ([]byte, error) {
 		return nil, errors.Wrapf(err, "error retrieving leveldb key [%#v]", key)
 	}
 	return value, nil
+}
+
+func (dbInst *DB) RetrieveLatestSnapshot() uint64 {
+	lastest := atomic.LoadUint64(&dbInst.lastSnapshot)
+	if countSnapshotVal, ok := dbInst.countSnapshotMap.Load(lastest); !ok {
+		panic("Fail to load countSnapshotMap for snapshot " + strconv.Itoa(int(lastest)))
+	} else {
+		countSnapshotVal.(*CountSnapshot).count++
+		logger.Infof("Increment latest snapshot %d to count %d.", lastest, countSnapshotVal.(*CountSnapshot))
+	}
+	return lastest
+}
+
+func (dbInst *DB) ReleaseSnapshot(snapshot uint64) bool {
+	lastest := atomic.LoadUint64(&dbInst.lastSnapshot)
+	if countSnapshotVal, ok := dbInst.countSnapshotMap.Load(snapshot); !ok {
+		panic("Fail to load countSnapshotMap for snapshot " + strconv.Itoa(int(snapshot)))
+	} else {
+		countSnapshotVal.(*CountSnapshot).count--
+		logger.Infof("Decrement snapshot %d to count %d. Latest Snapshot: %d", snapshot, countSnapshotVal, lastest)
+	}
+	return false
+}
+
+func (dbInst *DB) SnapshotGet(snapshot uint64, key []byte) ([]byte, error) {
+	if countSnapshotVal, ok := dbInst.countSnapshotMap.Load(snapshot); !ok {
+		panic("Fail to load countSnapshotMap for snapshot " + strconv.Itoa(int(snapshot)))
+	} else {
+		value, err := countSnapshotVal.(*CountSnapshot).snapshot.Get(key, dbInst.readOpts)
+		if err == leveldb.ErrNotFound {
+			value = nil
+			err = nil
+		}
+		if err != nil {
+			logger.Errorf("Error retrieving leveldb key [%#v] from snapshot %d : %s", key, snapshot, err)
+			return nil, errors.Wrapf(err, "error retrieving leveldb key [%#v]", key)
+		}
+		return value, nil
+	}
+	return nil, nil
 }
 
 // Put saves the key/value
@@ -140,7 +216,17 @@ func (dbInst *DB) Delete(key []byte, sync bool) error {
 // The resultset contains all the keys that are present in the db between the startKey (inclusive) and the endKey (exclusive).
 // A nil startKey represents the first available key and a nil endKey represent a logical key after the last available key
 func (dbInst *DB) GetIterator(startKey []byte, endKey []byte) iterator.Iterator {
+
+	// return dbInst.snapshot.NewIterator(&goleveldbutil.Range{Start: startKey, Limit: endKey}, dbInst.readOpts)
 	return dbInst.db.NewIterator(&goleveldbutil.Range{Start: startKey, Limit: endKey}, dbInst.readOpts)
+}
+
+func (dbInst *DB) SnapshotGetIterator(snapshot uint64, startKey []byte, endKey []byte) iterator.Iterator {
+	if countSnapshotVal, ok := dbInst.countSnapshotMap.Load(snapshot); !ok {
+		panic("Fail to load countSnapshotMap for snapshot " + strconv.Itoa(int(snapshot)))
+	} else {
+		return countSnapshotVal.(*CountSnapshot).snapshot.NewIterator(&goleveldbutil.Range{Start: startKey, Limit: endKey}, dbInst.readOpts)
+	}
 }
 
 // WriteBatch writes a batch
@@ -153,4 +239,20 @@ func (dbInst *DB) WriteBatch(batch *leveldb.Batch, sync bool) error {
 		return errors.Wrap(err, "error writing batch to leveldb")
 	}
 	return nil
+}
+
+func (dbInst *DB) SnapshotWriteBatch(batch *leveldb.Batch, blkHeight uint64, synchronized bool) error {
+	// dbInst.snapshot.Release()
+	var err error
+	if err = dbInst.WriteBatch(batch, synchronized); err != nil {
+		return err
+	}
+	if newSnapshot, err := dbInst.db.GetSnapshot(); err != nil {
+		panic(fmt.Sprintf("Error creating snapshot %s", err))
+	} else {
+		dbInst.countSnapshotMap.Store(blkHeight, &CountSnapshot{count: 0, snapshot: newSnapshot})
+		atomic.StoreUint64(&dbInst.lastSnapshot, blkHeight)
+		logger.Infof("Create the latest snapshot %d", blkHeight)
+	}
+	return err
 }

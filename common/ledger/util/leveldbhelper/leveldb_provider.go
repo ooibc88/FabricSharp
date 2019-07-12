@@ -69,6 +69,10 @@ func (h *DBHandle) Get(key []byte) ([]byte, error) {
 	return h.db.Get(constructLevelKey(h.dbName, key))
 }
 
+func (h *DBHandle) SnapshotGet(snapshot uint64, key []byte) ([]byte, error) {
+	return h.db.SnapshotGet(snapshot, constructLevelKey(h.dbName, key))
+}
+
 // Put saves the key/value
 func (h *DBHandle) Put(key []byte, value []byte, sync bool) error {
 	return h.db.Put(constructLevelKey(h.dbName, key), value, sync)
@@ -99,6 +103,33 @@ func (h *DBHandle) WriteBatch(batch *UpdateBatch, sync bool) error {
 	return nil
 }
 
+func (h *DBHandle) RetrieveLatestSnapshot() uint64 {
+	return h.db.RetrieveLatestSnapshot()
+}
+
+func (h *DBHandle) ReleaseSnapshot(snapshot uint64) bool {
+	return h.db.ReleaseSnapshot(snapshot)
+}
+
+func (h *DBHandle) SnapshotWriteBatch(batch *UpdateBatch, blkHeight uint64, sync bool) error {
+	if len(batch.KVs) == 0 {
+		return nil
+	}
+	levelBatch := &leveldb.Batch{}
+	for k, v := range batch.KVs {
+		key := constructLevelKey(h.dbName, []byte(k))
+		if v == nil {
+			levelBatch.Delete(key)
+		} else {
+			levelBatch.Put(key, v)
+		}
+	}
+	if err := h.db.SnapshotWriteBatch(levelBatch, blkHeight, sync); err != nil {
+		return err
+	}
+	return nil
+}
+
 // GetIterator gets an handle to iterator. The iterator should be released after the use.
 // The resultset contains all the keys that are present in the db between the startKey (inclusive) and the endKey (exclusive).
 // A nil startKey represents the first available key and a nil endKey represent a logical key after the last available key
@@ -111,6 +142,17 @@ func (h *DBHandle) GetIterator(startKey []byte, endKey []byte) *Iterator {
 	}
 	logger.Debugf("Getting iterator for range [%#v] - [%#v]", sKey, eKey)
 	return &Iterator{h.db.GetIterator(sKey, eKey)}
+}
+
+func (h *DBHandle) SnapshotGetIterator(snapshot uint64, startKey []byte, endKey []byte) *Iterator {
+	sKey := constructLevelKey(h.dbName, startKey)
+	eKey := constructLevelKey(h.dbName, endKey)
+	if endKey == nil {
+		// replace the last byte 'dbNameKeySep' by 'lastKeyIndicator'
+		eKey[len(eKey)-1] = lastKeyIndicator
+	}
+	logger.Debugf("Getting iterator for range [%#v] - [%#v]", sKey, eKey)
+	return &Iterator{h.db.SnapshotGetIterator(snapshot, sKey, eKey)}
 }
 
 // UpdateBatch encloses the details of multiple `updates`
