@@ -86,7 +86,7 @@ func (t *Transaction) RetrieveHash(ns string, coll string) []byte {
 }
 
 // ApplyWriteSet adds (or deletes) the key/values present in the write set to the PubAndHashUpdates
-func (u *PubAndHashUpdates) ApplyWriteSet(txRWSet *rwsetutil.TxRwSet, txHeight *version.Height, db privacyenabledstate.DB) error {
+func (u *PubAndHashUpdates) ApplyWriteSet(txRWSet *rwsetutil.TxRwSet, txHeight *version.Height, db privacyenabledstate.DB, txnID string) error {
 	txops, err := prepareTxOps(txRWSet, txHeight, u, db)
 	logger.Debugf("txops=%#v", txops)
 	if err != nil {
@@ -96,9 +96,9 @@ func (u *PubAndHashUpdates) ApplyWriteSet(txRWSet *rwsetutil.TxRwSet, txHeight *
 		if compositeKey.coll == "" {
 			ns, key := compositeKey.ns, compositeKey.key
 			if keyops.isDelete() {
-				u.PubUpdates.Delete(ns, key, txHeight)
+				u.PubUpdates.Delete(ns, key, txHeight, txnID)
 			} else {
-				u.PubUpdates.PutValAndMetadata(ns, key, keyops.value, keyops.metadata, txHeight)
+				u.PubUpdates.PutValAndMetadata(ns, key, keyops.value, keyops.metadata, txHeight, txnID)
 			}
 		} else {
 			ns, coll, keyHash := compositeKey.ns, compositeKey.coll, []byte(compositeKey.key)

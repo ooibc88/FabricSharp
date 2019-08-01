@@ -216,7 +216,7 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 		for k, vv := range updates {
 			compositeKey := constructCompositeKey(ns, k)
 			logger.Infof("udb ApplyUpdates: Channel [%s]: Applying key(string)=[%s] value(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Value))
-			if !strings.HasSuffix(k, "_prov") {
+			if !strings.HasSuffix(k, "_prov") && !strings.HasSuffix(k, "_txnID") {
 				logger.Infof("[udb] Key %s does NOT have prov suffix", k)
 				val := string(vv.Value)
 				depList := ustore.NewVecStr()
@@ -231,8 +231,11 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 						}
 					} // end for
 				} // end if provVal
-				txnID := "fakeTxnID" // Currently empty here
-				logger.Infof("[udb] PutState key [%s], val [%s], blk idx [%d], dep_list [%v]", compositeKey, val, height.BlockNum, depStrs)
+				txnID := ""
+				if txnIDVal, ok := updates[k+"_txnID"]; ok {
+					txnID = string(txnIDVal.Value)
+				}
+				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v]", compositeKey, val, txnID, height.BlockNum, depStrs)
 				vdb.udb.PutState(compositeKey, val, txnID, height.BlockNum, depList)
 			} else {
 				logger.Infof("[udb] Key %s has prov suffix", k)
