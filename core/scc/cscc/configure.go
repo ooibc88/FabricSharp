@@ -56,7 +56,7 @@ func (e *PeerConfiger) Chaincode() shim.Chaincode { return e }
 func (e *PeerConfiger) InvokableExternal() bool   { return true }
 func (e *PeerConfiger) InvokableCC2CC() bool      { return false }
 func (e *PeerConfiger) Enabled() bool             { return true }
-func (e *PeerConfiger) Prov(reads, writes map[string][]byte) map[string][]string {
+func (e *PeerConfiger) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
 	return nil
 }
 

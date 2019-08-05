@@ -160,7 +160,7 @@ func (lscc *LifeCycleSysCC) Chaincode() shim.Chaincode { return lscc }
 func (lscc *LifeCycleSysCC) InvokableExternal() bool   { return true }
 func (lscc *LifeCycleSysCC) InvokableCC2CC() bool      { return true }
 func (lscc *LifeCycleSysCC) Enabled() bool             { return true }
-func (e *LifeCycleSysCC) Prov(reads, writes map[string][]byte) map[string][]string {
+func (e *LifeCycleSysCC) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
 	return nil
 }
 

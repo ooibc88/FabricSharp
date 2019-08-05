@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 	"ustore"
 
 	"github.com/hyperledger/fabric/common/flogging"
@@ -211,11 +212,13 @@ func (vdb *versionedDB) GetVersion(namespace string, key string) (*version.Heigh
 func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
 	// dbBatch := leveldbhelper.NewUpdateBatch()
 	namespaces := batch.GetUpdatedNamespaces()
-	for _, ns := range namespaces {
+	logger.Infof("[udb] Prepare to commit blk %d", uint64(height.BlockNum))
+	for i, ns := range namespaces {
+		logger.Infof("[udb] Prepare to commit %d ns %s", i, ns)
 		updates := batch.GetUpdates(ns)
 		for k, vv := range updates {
 			compositeKey := constructCompositeKey(ns, k)
-			logger.Infof("udb ApplyUpdates: Channel [%s]: Applying key(string)=[%s] value(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Value))
+			logger.Infof("[udb] ApplyUpdates: Channel [%s]: Applying key(string)=[%s] value(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Value))
 			if !strings.HasSuffix(k, "_prov") && !strings.HasSuffix(k, "_txnID") {
 				logger.Infof("[udb] Key %s does NOT have prov suffix", k)
 				val := string(vv.Value)
@@ -231,23 +234,28 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 						}
 					} // end for
 				} // end if provVal
-				txnID := ""
+				// logger.Infof("Temp Disable for dependency...")
+				txnID := "faketxnid" // can NOT be empty
 				if txnIDVal, ok := updates[k+"_txnID"]; ok {
 					txnID = string(txnIDVal.Value)
 				}
-				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v]", compositeKey, val, txnID, height.BlockNum, depStrs)
+				startPut := time.Now()
 				vdb.udb.PutState(compositeKey, val, txnID, height.BlockNum, depList)
+				elapsedPut := time.Since(startPut).Nanoseconds() / 1000
+				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v] with %d us", compositeKey, val, txnID, height.BlockNum, depStrs, elapsedPut)
 			} else {
 				logger.Infof("[udb] Key %s has prov suffix", k)
 			} // end if has Suffix
 		}
 	}
 	blkIdx := height.BlockNum
+	startCommit := time.Now()
 	logger.Infof("[udb] Finish apply batch updates for block %d", blkIdx)
 	if statusStr := vdb.udb.Commit(); !statusStr.GetFirst().Ok() {
 		return errors.New("Fail to commit global state with status " + statusStr.GetFirst().ToString())
 	}
-	logger.Infof("[udb] Finish commit state for block %d", blkIdx)
+	elapsedCommit := time.Since(startCommit).Nanoseconds() / 1000
+	logger.Infof("[udb] Finish commit state for block %d with %d us", blkIdx, elapsedCommit)
 	if status := vdb.udb.Put("latest-height", strconv.Itoa(int(blkIdx))); !status.Ok() {
 		return errors.New("Fail to put latest block height with status " + status.ToString())
 	}

@@ -74,6 +74,6 @@ func (scc *SCC) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	}
 }
 
-func (scc *SCC) Prov(reads, writes map[string][]byte) map[string][]string {
+func (scc *SCC) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
 	return nil
 }

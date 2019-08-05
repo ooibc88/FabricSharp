@@ -26,7 +26,7 @@ type Chaincode interface {
 	// transaction is committed.
 	Invoke(stub ChaincodeStubInterface) pb.Response
 
-	Prov(reads, writes map[string][]byte) map[string][]string
+	Prov(stub ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string
 }
 
 type HistResult struct {
