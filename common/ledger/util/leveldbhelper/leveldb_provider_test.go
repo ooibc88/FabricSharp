@@ -172,3 +172,78 @@ func createTestValues(dbname string, start int, end int) []string {
 	}
 	return values
 }
+
+func iterateAllKeys(db *DBHandle) {
+	it := db.db.db.NewIterator(nil, nil)
+	it.Seek([]byte(""))
+	for it.Valid() {
+		fmt.Printf("Key [%s]\n", string(it.Key()))
+		it.Next()
+	}
+}
+func TestProv(t *testing.T) {
+	env := newTestProviderEnv(t, testDBPath)
+	defer env.cleanup()
+	p := env.provider
+	db := p.GetDBHandle("db")
+
+	batch1 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch1.Put("k1", []byte(("v12")), "t1", 2, []string{})
+	batch1.Put("k2", []byte(("v22")), "t2", 2, []string{})
+	batch1.Put("k3", []byte(("v32")), "t3", 2, []string{})
+	assert.NoError(t, db.WriteProvBatch(batch1, true), "")
+
+	batch2 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch2.Put("k2", []byte("v24"), "t4", 4, []string{"k1", "k3"})
+	assert.NoError(t, db.WriteProvBatch(batch2, true), "")
+
+	batch3 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch3.Put("k1", []byte("v16"), "t5", 6, []string{"k2", "k3"})
+	assert.NoError(t, db.WriteProvBatch(batch3, true), "")
+
+	batch4 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch4.Put("k3", []byte("v38"), "t6", 8, []string{"k1", "k3"})
+	assert.NoError(t, db.WriteProvBatch(batch4, true), "")
+
+	// iterateAllKeys(db)
+	var val string
+	var blkIndx uint64
+	var err error
+	val, blkIndx, err = db.HistQuery("k1", 999999)
+	assert.NoError(t, err)
+	assert.Equal(t, "v16", string(val))
+	assert.Equal(t, uint64(6), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k2", 4)
+	assert.NoError(t, err)
+	assert.Equal(t, "v24", string(val))
+	assert.Equal(t, uint64(4), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k2", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "", string(val))
+	assert.Equal(t, uint64(0), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k3", 999999)
+	assert.NoError(t, err)
+	assert.Equal(t, "v38", string(val))
+	assert.Equal(t, uint64(8), blkIndx)
+
+	txnID, depKeys, depkIdx, err := db.Backward("k2", 4)
+	assert.NoError(t, err)
+	assert.Equal(t, "t4", txnID)
+	assert.Equal(t, []string{"k1", "k3"}, depKeys)
+	assert.Equal(t, []uint64{2, 2}, depkIdx)
+
+	txnID, depKeys, depkIdx, err = db.Backward("k1", 40)
+	assert.NoError(t, err)
+	assert.Equal(t, "t5", txnID)
+	assert.Equal(t, []string{"k2", "k3"}, depKeys)
+	assert.Equal(t, []uint64{4, 2}, depkIdx)
+
+	txnID, depKeys, depkIdx, err = db.Backward("k3", 40)
+	assert.NoError(t, err)
+	assert.Equal(t, "t6", txnID)
+	assert.Equal(t, []string{"k1", "k3"}, depKeys)
+	assert.Equal(t, []uint64{6, 2}, depkIdx)
+}
