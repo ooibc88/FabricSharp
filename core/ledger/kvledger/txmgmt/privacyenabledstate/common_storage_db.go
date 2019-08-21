@@ -19,6 +19,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateustoredb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/protos/common"
@@ -44,12 +45,16 @@ func NewCommonStorageDBProvider(bookkeeperProvider bookkeeping.Provider) (DBProv
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
 	if ledgerconfig.IsCouchDBEnabled() {
+		panic("Not supported for CouchDB")
 		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(); err != nil {
 			return nil, err
 		}
-	} else {
+	} else if ledgerconfig.IsLevelDBEnabled() {
 		vdbProvider = stateleveldb.NewVersionedDBProvider()
-		// vdbProvider = stateustoredb.NewVersionedDBProvider()
+	} else if ledgerconfig.IsForkBaseEnabled() {
+		vdbProvider = stateustoredb.NewVersionedDBProvider()
+	} else {
+		panic("Non-supported DB type")
 	}
 	return &CommonStorageDBProvider{vdbProvider, bookkeeperProvider}, nil
 }

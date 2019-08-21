@@ -103,8 +103,7 @@ PROJECT_FILES = $(shell git ls-files  | grep -v ^test | grep -v ^unit-test | \
 	grep -v ^.git | grep -v ^examples | grep -v ^devenv | grep -v .png$ | \
 	grep -v ^LICENSE | grep -v ^vendor )
 RELEASE_TEMPLATES = $(shell git ls-files | grep "release/templates")
-#IMAGES = peer orderer ccenv buildenv testenv tools
-IMAGES = ccenv
+IMAGES = peer orderer ccenv buildenv testenv tools forkbase
 RELEASE_PLATFORMS = windows-amd64 darwin-amd64 linux-amd64 linux-s390x
 RELEASE_PKGS = configtxgen cryptogen idemixgen discover configtxlator peer orderer
 
@@ -156,6 +155,8 @@ gotools: gotools-install
 .PHONY: peer
 peer: $(BUILD_DIR)/bin/peer
 peer-docker: $(BUILD_DIR)/image/peer/$(DUMMY)
+
+forkbase-docker: $(BUILD_DIR)/image/forkbase/$(DUMMY)
 
 .PHONY: orderer
 orderer: $(BUILD_DIR)/bin/orderer
@@ -225,13 +226,31 @@ $(BUILD_DIR)/%/chaintool: Makefile
 	curl -fL $(CHAINTOOL_URL) > $@
 	chmod +x $@
 
+# Firstly build the dependent provdb (with dasl) library and then peer binary 
+# Note that we also need built provdb as well as the entire ustore library during the peer runtime
+# So we mount the volume $(BUILD_DIR)/docker/peer/ustore_build to persist them. 
+# And we later later plug this directory into peer-image
+$(BUILD_DIR)/docker/bin/peer: $(PROJECT_FILES) forkbase-docker
+	@echo "Building $@"
+	@mkdir -p $(BUILD_DIR)/docker/bin \
+			  $(BUILD_DIR)/docker/peer/pkg \
+			  $(BUILD_DIR)/docker/peer/ustore_build
+	@$(DRUN) \
+		-v $(abspath $(BUILD_DIR)/docker/bin):/opt/gopath/bin \
+		-v $(abspath $(BUILD_DIR)/docker/peer/pkg):/opt/gopath/pkg \
+		-v $(abspath $(BUILD_DIR)/docker/peer/ustore_build):/usr/external/ustore_build \
+		$(BASE_DOCKER_NS)/forkbase:$(BASE_DOCKER_TAG) \
+		/bin/bash -c \
+		'cd /provdb && make go lib_dasl && cd /opt/gopath/src/$(PKGNAME) && CGO_LDFLAGS="-lprovdb_dasl -lustore" CGO_CXXFLAGS="-std=c++11 -I/provdb/src" go install -tags "$(GO_TAGS)" -ldflags "$(DOCKER_GO_LDFLAGS)" $(pkgmap.$(@F)) && cp -r /usr/local/share/ustore_release.alpha/* /usr/external/ustore_build/'
+	@touch $@
+
 # We (re)build a package within a docker context but persist the $GOPATH/pkg
 # directory so that subsequent builds are faster
 $(BUILD_DIR)/docker/bin/%: $(PROJECT_FILES)
 	$(eval TARGET = ${patsubst $(BUILD_DIR)/docker/bin/%,%,${@}})
 	@echo "Building $@"
 	@mkdir -p $(BUILD_DIR)/docker/bin $(BUILD_DIR)/docker/$(TARGET)/pkg
-	@$(DRUN) \
+	$(DRUN) \
 		-v $(abspath $(BUILD_DIR)/docker/bin):/opt/gopath/bin \
 		-v $(abspath $(BUILD_DIR)/docker/$(TARGET)/pkg):/opt/gopath/pkg \
 		$(BASE_DOCKER_NS)/fabric-baseimage:$(BASE_DOCKER_TAG) \
@@ -267,7 +286,8 @@ $(BUILD_DIR)/image/ccenv/payload:      $(BUILD_DIR)/docker/gotools/bin/protoc-ge
 				$(BUILD_DIR)/bin/chaintool \
 				$(BUILD_DIR)/goshim.tar.bz2
 $(BUILD_DIR)/image/peer/payload:       $(BUILD_DIR)/docker/bin/peer \
-				$(BUILD_DIR)/sampleconfig.tar.bz2
+				$(BUILD_DIR)/sampleconfig.tar.bz2 
+
 $(BUILD_DIR)/image/orderer/payload:    $(BUILD_DIR)/docker/bin/orderer \
 				$(BUILD_DIR)/sampleconfig.tar.bz2
 $(BUILD_DIR)/image/buildenv/payload:   $(BUILD_DIR)/gotools.tar.bz2 \
@@ -276,6 +296,15 @@ $(BUILD_DIR)/image/testenv/payload:    $(BUILD_DIR)/docker/bin/orderer \
 				$(BUILD_DIR)/docker/bin/peer \
 				$(BUILD_DIR)/sampleconfig.tar.bz2 \
 				images/testenv/install-softhsm2.sh
+
+$(BUILD_DIR)/image/forkbase/payload: 
+	mkdir -p $@
+	cp -r images/forkbase/payload/* $@/
+
+$(BUILD_DIR)/image/peer/payload:
+	mkdir -p $@
+	cp $^ $@
+	cp -r $(BUILD_DIR)/docker/peer/ustore_build $@
 
 $(BUILD_DIR)/image/%/payload:
 	mkdir -p $@
@@ -300,6 +329,13 @@ $(BUILD_DIR)/image/tools/$(DUMMY): $(BUILD_DIR)/image/tools/Dockerfile
 	$(DBUILD) -t $(DOCKER_NS)/fabric-$(TARGET) -f $(@D)/Dockerfile .
 	docker tag $(DOCKER_NS)/fabric-$(TARGET) $(DOCKER_NS)/fabric-$(TARGET):$(DOCKER_TAG)
 	docker tag $(DOCKER_NS)/fabric-$(TARGET) $(DOCKER_NS)/fabric-$(TARGET):$(ARCH)-latest
+	@touch $@
+
+$(BUILD_DIR)/image/forkbase/$(DUMMY): Makefile $(BUILD_DIR)/image/forkbase/payload $(BUILD_DIR)/image/forkbase/Dockerfile
+	$(eval TARGET = ${patsubst $(BUILD_DIR)/image/%/$(DUMMY),%,${@}})
+	@echo "Building docker forkbase-image"
+	$(DBUILD) -t $(DOCKER_NS)/forkbase $(@D)
+	docker tag $(DOCKER_NS)/forkbase $(DOCKER_NS)/forkbase:$(BASE_DOCKER_TAG)
 	@touch $@
 
 $(BUILD_DIR)/image/%/$(DUMMY): Makefile $(BUILD_DIR)/image/%/payload $(BUILD_DIR)/image/%/Dockerfile

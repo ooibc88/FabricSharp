@@ -6,5 +6,13 @@ FROM _BASE_NS_/fabric-baseos:_BASE_TAG_
 ENV FABRIC_CFG_PATH /etc/hyperledger/fabric
 RUN mkdir -p /var/hyperledger/production $FABRIC_CFG_PATH
 COPY payload/peer /usr/local/bin
+
+
 ADD  payload/sampleconfig.tar.bz2 $FABRIC_CFG_PATH
+
+COPY payload/ustore_build /usr/local/share/ustore_release
+ENV USTORE_HOME=/usr/local/share/ustore_release
+ENV LD_LIBRARY_PATH=${USTORE_HOME}/lib:/usr/lib/:${LD_LIBRARY_PATH}
+ENV CORE_LEDGER_STATE_STATEDATABASE=forkbase
+
 CMD ["peer","node","start"]
