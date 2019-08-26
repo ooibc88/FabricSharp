@@ -126,12 +126,12 @@ func (b UpdateMap) Put(ns, coll, key string, value []byte, version *version.Heig
 
 // PutValAndMetadata adds a key with value and metadata
 func (b UpdateMap) PutValAndMetadata(ns, coll, key string, value []byte, metadata []byte, version *version.Height) {
-	b.getOrCreateNsBatch(ns).PutValAndMetadata(coll, key, value, metadata, version)
+	b.getOrCreateNsBatch(ns).PutValAndMetadata(coll, key, value, metadata, version, "fakeTxID")
 }
 
 // Delete adds a delete marker in the batch for a given combination of namespace and collection name
 func (b UpdateMap) Delete(ns, coll, key string, version *version.Height) {
-	b.getOrCreateNsBatch(ns).Delete(coll, key, version)
+	b.getOrCreateNsBatch(ns).Delete(coll, key, version, "fakeTxID")
 }
 
 // Get retrieves the value from the batch for a given combination of namespace and collection name

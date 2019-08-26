@@ -201,6 +201,9 @@ func (lscc *LifeCycleSysCC) ChaincodeDefinition(chaincodeName string, qe ledger.
 
 	return chaincodeData, nil
 }
+func (lscc *LifeCycleSysCC) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
+	return nil
+}
 
 //create the chaincode on the given chain
 func (lscc *LifeCycleSysCC) putChaincodeData(stub shim.ChaincodeStubInterface, cd *ccprovider.ChaincodeData) error {

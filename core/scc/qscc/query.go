@@ -64,6 +64,10 @@ func (e *LedgerQuerier) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	return shim.Success(nil)
 }
 
+func (e *LedgerQuerier) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
+	return nil
+}
+
 // Invoke is called with args[0] contains the query function name, args[1]
 // contains the chain ID, which is temporary for now until it is part of stub.
 // Each function requires additional parameters as described below:

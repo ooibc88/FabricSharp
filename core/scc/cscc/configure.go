@@ -120,6 +120,10 @@ func (e *PeerConfiger) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	return e.InvokeNoShim(args, sp)
 }
 
+func (e *PeerConfiger) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
+	return nil
+}
+
 func (e *PeerConfiger) InvokeNoShim(args [][]byte, sp *pb.SignedProposal) pb.Response {
 	var err error
 	fname := string(args[0])

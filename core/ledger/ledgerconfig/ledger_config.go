@@ -22,6 +22,14 @@ func IsCouchDBEnabled() bool {
 	return false
 }
 
+func IsForkBaseEnabled() bool {
+	stateDatabase := viper.GetString("ledger.state.stateDatabase")
+	if stateDatabase == "forkbase" {
+		return true
+	}
+	return false
+}
+
 const confPeerFileSystemPath = "peer.fileSystemPath"
 const confLedgersData = "ledgersData"
 const confLedgerProvider = "ledgerProvider"

@@ -45,6 +45,10 @@ func (scc *SCC) Name() string {
 	return "+lifecycle"
 }
 
+func (scc *SCC) Prov(stub shim.ChaincodeStubInterface, reads, writes map[string][]byte) map[string][]string {
+	return nil
+}
+
 // Path returns "github.com/hyperledger/fabric/core/chaincode/lifecycle"
 func (scc *SCC) Path() string {
 	return "github.com/hyperledger/fabric/core/chaincode/lifecycle"

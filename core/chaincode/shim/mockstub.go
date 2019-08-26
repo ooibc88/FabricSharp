@@ -17,7 +17,7 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	pb "github.com/hyperledger/fabric/protos/peer"
-	"github.com/op/go-logging"
+	logging "github.com/op/go-logging"
 	"github.com/pkg/errors"
 )
 
@@ -99,6 +99,26 @@ func (stub *MockStub) GetFunctionAndParameters() (function string, params []stri
 		params = allargs[1:]
 	}
 	return
+}
+
+func (stub *MockStub) GetReads() map[string][]byte {
+	return nil
+}
+
+func (stub *MockStub) GetWrites() map[string][]byte {
+	return nil
+}
+
+func (stub *MockStub) Hist(key string, blk uint64) (string, uint64, error) {
+	return "", 0, nil
+}
+
+func (stub *MockStub) Backward(key string, blk uint64) ([]string, []uint64, string, error) {
+	return nil, nil, "", nil
+}
+
+func (stub *MockStub) Forward(key string, blk uint64) ([]string, []uint64, []string, error) {
+	return nil, nil, nil, nil
 }
 
 // Used to indicate to a chaincode that it is part of a transaction.

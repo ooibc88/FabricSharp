@@ -272,6 +272,29 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage, errc chan er
 		}
 		res := handler.cc.Invoke(stub)
 
+		args := make([]string, 0)
+		for _, inp := range input.Args {
+			args = append(args, string(inp))
+		}
+		fmt.Printf("Invoke cc with args [%v] \n", args)
+		if prov := handler.cc.Prov(stub, stub.GetReads(), stub.GetWrites()); prov != nil {
+			for k, deps := range prov {
+				depList := ""
+				for _, dep := range deps {
+					depList = depList + dep + "_"
+				}
+				provKey := k + "_prov"
+				fmt.Printf("  Start to put Provenance info with key " + provKey + "\n")
+				if err := handler.handlePutState("", provKey, []byte(depList), stub.ChannelId, stub.TxID); err != nil {
+					fmt.Print("  Put Provenance fails for key " + k + "\n")
+				} else {
+					fmt.Printf("  Put Provenance info with key " + provKey + " and value " + depList + "\n")
+				}
+			}
+		} else {
+			fmt.Print("  No provenance captured.\n")
+		}
+
 		// Endorser will handle error contained in Response.
 		resBytes, err := proto.Marshal(&res)
 		if nextStateMsg = errFunc(err, stub.chaincodeEvent, "[%s] Transaction execution failed. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_ERROR.String()); nextStateMsg != nil {

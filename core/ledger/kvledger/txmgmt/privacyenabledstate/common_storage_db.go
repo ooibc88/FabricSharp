@@ -18,8 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/bookkeeping"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateustoredb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/pkg/errors"
@@ -44,12 +43,18 @@ type CommonStorageDBProvider struct {
 func NewCommonStorageDBProvider(bookkeeperProvider bookkeeping.Provider, metricsProvider metrics.Provider, healthCheckRegistry ledger.HealthCheckRegistry) (DBProvider, error) {
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
-	if ledgerconfig.IsCouchDBEnabled() {
-		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(metricsProvider); err != nil {
-			return nil, err
-		}
+	// if ledgerconfig.IsCouchDBEnabled() {
+	// 	if vdbProvider, err = statecouchdb.NewVersionedDBProvider(metricsProvider); err != nil {
+	// 		return nil, err
+	// 	}
+	// } else {
+	// 	vdbProvider = stateleveldb.NewVersionedDBProvider()
+	// }
+
+	if ledgerconfig.IsForkBaseEnabled() {
+		vdbProvider = stateustoredb.NewVersionedDBProvider()
 	} else {
-		vdbProvider = stateleveldb.NewVersionedDBProvider()
+		panic("No db type other than Forkbase supported")
 	}
 
 	dbProvider := &CommonStorageDBProvider{vdbProvider, healthCheckRegistry, bookkeeperProvider}
@@ -324,7 +329,7 @@ func addPvtUpdates(pubUpdateBatch *PubUpdateBatch, pvtUpdateBatch *PvtUpdateBatc
 	for ns, nsBatch := range pvtUpdateBatch.UpdateMap {
 		for _, coll := range nsBatch.GetCollectionNames() {
 			for key, vv := range nsBatch.GetUpdates(coll) {
-				pubUpdateBatch.Update(derivePvtDataNs(ns, coll), key, vv)
+				pubUpdateBatch.Update(derivePvtDataNs(ns, coll), key, vv, "emptytxn")
 			}
 		}
 	}
@@ -337,7 +342,7 @@ func addHashedUpdates(pubUpdateBatch *PubUpdateBatch, hashedUpdateBatch *HashedU
 				if base64Key {
 					key = base64.StdEncoding.EncodeToString([]byte(key))
 				}
-				pubUpdateBatch.Update(deriveHashedDataNs(ns, coll), key, vv)
+				pubUpdateBatch.Update(deriveHashedDataNs(ns, coll), key, vv, "emptytxn")
 			}
 		}
 	}
