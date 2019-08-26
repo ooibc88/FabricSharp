@@ -1,0 +1,57 @@
+FROM _BASE_NS_/fabric-baseimage:_BASE_TAG_
+
+COPY payload/ustore_release.alpha /usr/local/share/ustore_release.alpha
+
+COPY payload/boost_hpp /usr/local/include/boost
+
+COPY payload/rocksdb/include/rocksdb /usr/local/include/rocksdb
+COPY payload/rocksdb/lib/* /usr/lib/
+COPY payload/gflags/include/gflags /usr/local/include/gflags
+COPY payload/gflags/lib/* /usr/lib/
+
+ENV GOPATH=/opt/gopath
+ENV USTORE_HOME=/usr/local/share/ustore_release.alpha
+ENV USTORE_GOPATH=${GOPATH}/src/ustore
+ENV PATH=${USTORE_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${USTORE_HOME}/lib:/usr/lib/:${LD_LIBRARY_PATH}
+ENV LIBRARY_PATH=${USTORE_HOME}/lib:/usr/lib/:${LIBRARY_PATH}
+ENV CPLUS_INCLUDE_PATH=${USTORE_HOME}/include:/usr/local/include/:${CPLUS_INCLUDE_PATH}
+
+RUN mkdir -p ${USTORE_GOPATH}
+COPY payload/api_wrapper/* ${USTORE_GOPATH}/
+COPY payload/src provdb/src
+COPY payload/test provdb/test
+COPY payload/Makefile provdb/Makefile
+COPY payload/exp ${GOPATH}/src/microexp
+
+RUN chgrp -R root /provdb
+RUN chmod -R g+rw /provdb
+
+RUN mkdir -p /usr/external
+RUN chgrp -R root /usr/external
+RUN chmod -R g+rw /usr/external
+
+RUN chgrp -R root ${USTORE_HOME}
+RUN chmod -R g+rw ${USTORE_HOME}
+
+RUN chgrp -R root ${USTORE_GOPATH}
+RUN chmod -R g+rw ${USTORE_GOPATH}
+
+RUN apt-get update
+RUN yes | apt-get install g++-4.8 swig libbz2-dev libz-dev
+
+# PLS be comfortable that we use the earlier version of g++,  
+#   as dependencies are all compiled with this version
+RUN rm /usr/bin/g++ && ln -s /usr/bin/g++-4.8 /usr/bin/g++
+RUN rm /usr/bin/gcc && ln -s /usr/bin/gcc-4.8 /usr/bin/gcc
+
+# The original baseimage installs protobuf v3.0.1, 
+# But ustore/forkbase is compiled using protobuf v3.6.1,
+# We hence replace the previous old version
+
+COPY payload/update_protobuf.sh /update_protobuf.sh
+RUN chmod +x /update_protobuf.sh
+RUN /update_protobuf.sh
+
+WORKDIR provdb
+CMD ["make","all"]

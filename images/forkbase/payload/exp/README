@@ -1,0 +1,7 @@
+1. Dependency
+* Build ustoredb
+* Install rocksdb
+* Install gorocksdb
+
+// CGO_LDFLAGS='-L/users/ruanpc/USTORE/build/lib -lustore_kv -lboost_system -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy' CGO_CXXFLAGS="-std=c++11" go test
+// cd main/; CGO_LDFLAGS='-L/users/ruanpc/USTORE/build/lib -lustore_kv -lboost_system -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy' CGO_CXXFLAGS="-std=c++11" go test
