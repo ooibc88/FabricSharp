@@ -1,98 +1,80 @@
+# Overview
+This branch provides relelvant information with regard to the paper [Fine-Grained, Secure and Efficient Data Provenance on Blockchain Systems](http://www.vldb.org/pvldb/vol12/p975-ruan.pdf) published in VLDB 2019. 
+In the implementation, the _peer_ process relies on [__Forkbase__](http://www.vldb.org/pvldb/vol11/p1137-wang.pdf) to replace the original LevelDB in order for the secure and efficient provenance storage. 
+However, we have NOT released __ForkBase__ source code. 
+Hence, _peer_ can NOT get freely built in any platforms. (E.g, running `make peer` will definitely fail. )
+Instead, we provide a prebuilt __ForkBase__ dynamic library, along which _peer_ process can be built in the provided docker environment. 
 
-**Note:** This is a **read-only mirror** of the formal [Gerrit](https://gerrit.hyperledger.org/r/#/admin/projects/fabric) repository,
-where active development is ongoing. Issue tracking is handled in [Jira](https://jira.hyperledger.org/secure/Dashboard.jspa?selectPageId=10104)
+# Quick Start
+1. Build the chaincode environment  
 
-## Status
+   ```
+   make ccenv
+   ```
+2. Build the forkbase image. Note, this process may take a while (around 10~20 minutes), as it needs downloading some dependency and copying large files. 
 
-This project is an _Active_ Hyperledger project. For more information on the history of this project see the [Fabric wiki page](https://wiki.hyperledger.org/projects/Fabric). Information on what _Active_ entails can be found in
-the [Hyperledger Project Lifecycle document](https://wiki.hyperledger.org/community/project-lifecycle).
+    ```
+    make forkbase-docker 
+    ``` 
+3. Build the docker image 
 
-[![Build Status](https://jenkins.hyperledger.org/buildStatus/icon?job=fabric-merge-x86_64)](https://jenkins.hyperledger.org/view/fabric/job/fabric-merge-x86_64/)
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/955/badge)](https://bestpractices.coreinfrastructure.org/projects/955)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hyperledger/fabric)](https://goreportcard.com/report/github.com/hyperledger/fabric)
-[![GoDoc](https://godoc.org/github.com/hyperledger/fabric?status.svg)](https://godoc.org/github.com/hyperledger/fabric)
-[![Documentation Status](https://readthedocs.org/projects/hyperledger-fabric/badge/?version=latest)](http://hyperledger-fabric.readthedocs.io/en/latest/?badge=latest)
+ ```
+ DOCKER_DYNAMIC_LINK=true make peer-docker 
+ ``` 
+4. Test the build status by running
 
-## Hyperledger Fabric
+```
+docker run hyperledger/fabric-peer peer version | sed -n 2p
+```
+It shall return `Version: 1.3.1-Forkbase`.
+5. Once finished, You can start the peer container with the default setup 
+```
+docker run hyperledger/fabric-peer peer node start
+```
+You are recommended to spin up the whole network with the docker-compose file in the official [fabric-sample repo](https://github.com/hyperledger/fabric-samples/blob/release-1.4/basic-network/docker-compose.yml).
 
-Hyperledger Fabric is a platform for distributed ledger solutions, underpinned
-by a modular architecture delivering high degrees of confidentiality,
-resiliency, flexibility and scalability. It is designed to support pluggable
-implementations of different components, and accommodate the complexity and
-intricacies that exist across the economic ecosystem.
+6. (Optional) Meanwhile, we also provide a straightforward implementation that relies on the existing LevelDB to support provenance storage, which is used as the baseline in the paper experiments.  It can be turned on by setting the environment variable.
+```
+docker run --env CORE_LEDGER_STATE_STATEDATABASE=goleveldb hyperledger/fabric-peer peer node start
+```
+Note, by default `CORE_LEDGER_STATE_STATEDATABASE=forkbase`
 
-Hyperledger Fabric delivers a uniquely elastic and extensible architecture,
-distinguishing it from alternative blockchain solutions. Planning for the
-future of enterprise blockchain requires building on top of a fully-vetted,
-open source architecture; Hyperledger Fabric is your starting point.
+# Major Changes
+## Development upon ForkBase
+* We implement the Merkle DAG and Deterministic Append-only Skip List on top of Forkbase Storage, as described in the paper. Refer to [db.cc](images/forkbase/payload/src/db.cc) for details.
+* We use tool _swig_ to install our implementation into a go package (, named as _ustore_).
 
-## Releases
+## Fabric Codebase
+* We additionally provide [stateustoredb.go](core/ledger/kvledger/txmgmt/statedb/stateustoredb/stateustoredb.go) that implements _versiondb_ interface, which will invoke the above-generated _ustore_ package. 
+* We additionally provide three provenance APIs (_Hist_, _Backward_ and _Forward_) for _ChaincodeStubInterface_ and one method _Prov_ for Chaincode to be overrided in [shim.interfaces](core/chaincode/shim/interfaces.go). Refer to the paper for their details. 
+* Previously the chaincode will be launched and executed in a separate docker container. The data access request between the chaincode and peer process takes place in the format of grpc message. 
+* Our implementation relies on the existing infrastructure for the data communication. But we spare special key words to denote for the provenance query and information. These keywords and the associated value will be treated differently before dumping into storage, as shown in function _GetState_ and _ApplyUpdates_ in [stateustoredb.go](core/ledger/kvledger/txmgmt/statedb/stateustoredb/stateustoredb.go). 
 
-- [v1.3.0 - October 10, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.3.0)
-- [v1.3.0-rc1 - September 24, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.3.0-rc1)
-- [v1.2.0 - July 3, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.2.0)
-- [v1.2.0-rc1 - June 22, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.2.0-rc1)
-- [v1.1.0 - March 15, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.1.0)
-- [v1.1.0-rc1 - March 1, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.1.0-rc1)
-- [v1.1.0-alpha - January 25, 2018](https://github.com/hyperledger/fabric/releases/tag/v1.1.0-alpha)
-- [v1.0.5 - December 6, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.5)
-- [v1.1.0-preview - November 1, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.1.0-preview)
-- [v1.0.4 - October 31, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.4)
-- [v1.0.3 - October 3, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.3)
-- [v1.0.2 - September 10, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.2)
-- [v1.0.1 - August 10, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.1)
-- [v1.0.0 - July 11, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.0)
-- [v1.0.0-rc1 - June 23, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.0-rc1)
-- [v1.0.0-beta - June 8, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.0-beta)
-- [v1.0.0-alpha2 - May 14, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.0-alpha2)
-- [v1.0.0-alpha - March 16, 2017](https://github.com/hyperledger/fabric/releases/tag/v1.0.0-alpha)
-- [v0.6.1-preview - October 15, 2016](https://github.com/hyperledger/fabric/releases/tag/v0.6.0-preview)
-- [v0.6.0-preview - September 16, 2016](https://github.com/hyperledger/fabric/releases/tag/v0.6.0-preview)
+## Makefile
+* Previously, the _peer_ process is built within _hyperledger/fabric-baseimage_ image
+* We additionally specify a new image _hyperledger/fabric-forkbase_, which is based upon _hyperledger/fabric-baseimage_ image. But We include relevant __ForkBase__ dependencies into this new image in order to firstly build the above _db.cc_ and then _peer_.
+* These dynamic dependencies will also get included into _hyperledger/fabric-peer_ image.
 
-## Release Roadmap
+# Sample Provenance dependent Contract
+* [Smallbank](examples/chaincode/go/smallbank/smallbank.go), which is used to evaluate the implemetation's performance for Figure 15 
+* [Token](examples/chaincode/go/token/token.go), the introductory example in the paper
+* [FibonacciYCSB](examples/prov_demo). Refer to [Readme](examples/prov_demo/README.md) to reproduce experiments in Figure 10(a).
 
-Please visit the [Hyperledger Fabric wiki](https://wiki.hyperledger.org/projects/fabric/roadmap) for our release roadmap. We plan on a quarterly release cadence following the v1.1.0 release, delivering on a scoped set of themes and select features. Unless specified otherwise, all releases will be upgradable from the prior minor release.
+# Forkbase Development
+We also provide scripts to reproduce Figure 10(b) and 11(a,b,c). 
+* Enter into the created Forkbase docker container
+```
+docker run -it hyperledger/forkbase /bin/bash
+```
+* Build three executables _lineagechain_, _lineagechainMinus_ and _hypeledgePlus_
+``` 
+make all;
+```
+* Invoke `lineagechain bfs`, `lineagechain query` or `lineagechain scan` to reproduce series for LineageChain in Figure 10(b), 11(a,b) and 11(c) respectively.
+* The other two executables are used similarly and dedicated for series LineageChain- and Hyperledger+ in the figure. 
+* `make test` will build [test_db.cc](images/forkbase/payload/test/test_db.cc) and generate an executable _test.bin_. It shows the exact Merkle DAG in Figure 6 and Deterministic Append-only Skip list in Figure 8.
 
-## Documentation, Getting Started and Developer Guides
-
-Please visit our
-online documentation for
-information on getting started using and developing with the fabric, SDK and chaincode:
-- [v1.3](http://hyperledger-fabric.readthedocs.io/en/release-1.3/)
-- [v1.2](http://hyperledger-fabric.readthedocs.io/en/release-1.2/)
-- [v1.1](http://hyperledger-fabric.readthedocs.io/en/release-1.1/)
-- [v1.0](http://hyperledger-fabric.readthedocs.io/en/release-1.0/)
-- [master branch (development)](http://hyperledger-fabric.readthedocs.io/en/master/)
-
-It's recommended for first-time users to begin by going through the Getting Started section of the documentation in order to gain familiarity with the Hyperledger Fabric components and the basic transaction flow.
-
-## Contributing
-
-We welcome contributions to the Hyperledger Fabric project in many forms.
-There’s always plenty to do! Check [the documentation on how to contribute to this project](http://hyperledger-fabric.readthedocs.io/en/latest/CONTRIBUTING.html)
-for the full details.
-
-## Testing
-Check [the documentation](testingInfo.rst) for information on the testing structure that the project follows.
-
-## Community
-
-[Hyperledger Community](https://www.hyperledger.org/community)
-
-[Hyperledger mailing lists and archives](http://lists.hyperledger.org/)
-
-[Hyperledger Chat](http://chat.hyperledger.org/channel/fabric)
-
-[Hyperledger Fabric Issue Tracking (JIRA)](https://jira.hyperledger.org/secure/Dashboard.jspa?selectPageId=10104)
-
-[Hyperledger Fabric Wiki](https://wiki.hyperledger.org/projects/Fabric)
-
-[Hyperledger Wiki](https://wiki.hyperledger.org/)
-
-[Hyperledger Code of Conduct](https://wiki.hyperledger.org/community/hyperledger-project-code-of-conduct)
-
-[Community Calendar](https://wiki.hyperledger.org/community/calendar-public-meetings)
-
-## License <a name="license"></a>
-
-Hyperledger Project source code files are made available under the Apache License, Version 2.0 (Apache-2.0), located in the [LICENSE](LICENSE) file. Hyperledger Project documentation files are made available under the Creative Commons Attribution 4.0 International License (CC-BY-4.0), available at http://creativecommons.org/licenses/by/4.0/.
+# Note
+* You will notice plenty of term __ustore__ in the source code and docs. __Ustore__ is our internal name for __Forkbase__. Both are inter-changable. 
+* Feel free to leverage on our implementation to build provenance-dependent smart contracts. But REFRAIN from using the following two characters, dash(-) and underscore(_) in both key and value for the contract development and execution (e.g, Never _stub.PutState("abv_def", "123-234)_). They have special treatment in our internal implementation. 
+* [Previous README](OLD_README.md)
