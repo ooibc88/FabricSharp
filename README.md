@@ -3,7 +3,7 @@ FabricSharp (hash)  project is a variant of Hyperledger Fabric 1.4, a permission
 Compared with the vanilla version, FabricSharp supports fine-grained secure data provenance, sharding, use of
 trusted hardware (eg. SGX), and a blockchain native storage engine called ForkBase, to boost system performance.
 
-Thanks to colleagues from [MediLOT](https://medilot.com), [NUS](https://www.comp.nus.edu.sg/~dbsystem/index.html), [SUTD](https://istd.sutd.edu.sg/people/faculty/dinh-tien-tuan-anh), [BIT](http://cs.bit.edu.cn/szdw/jsml/js/zmh/index.htm), [Zhejiang University](https://person.zju.edu.cn/0098112), MZH Technologies and other organizations for their contributions.
+Thanks to colleagues from [MediLOT](https://medilot.com), [NUS](https://www.comp.nus.edu.sg/~dbsystem/index.html), [SUTD](https://istd.sutd.edu.sg/people/faculty/dinh-tien-tuan-anh), [BIT](http://cs.bit.edu.cn/szdw/jsml/js/zmh/index.htm), [Zhejiang University](https://person.zju.edu.cn/0098112), [MZH Technologies](http://www.mzhtechnologies.com/) and other organizations for their contributions.
 
 # Quick Start
 * Build the chaincode environment
