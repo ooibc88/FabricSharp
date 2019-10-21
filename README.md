@@ -14,7 +14,7 @@ make ccenv
 ```
 DOCKER_DYNAMIC_LINK=true make peer-docker
 ```
-__NOTE__: FabricSharp repies on ForkBase[3] as the storage engine, which is close-sourced.
+__NOTE__: FabricSharp relies on ForkBase[3] as the storage engine, which is close-sourced.
 Hence FabricSharp can only be built and run within the docker container. Running `make peer` may fail. So far FabricSharp only touches on _peer_ process. Other executables remain intact and other cmds in Makefile should function the same as before. 
 
 # Architecture
