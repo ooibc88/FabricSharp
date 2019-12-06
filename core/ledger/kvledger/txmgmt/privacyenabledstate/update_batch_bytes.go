@@ -7,6 +7,7 @@ package privacyenabledstate
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
@@ -76,6 +77,10 @@ func (bb *UpdatesBytesBuilder) buildForKeys(kv map[string]*statedb.VersionedValu
 	keys := util.GetSortedKeys(kv)
 	p := []*KVWriteProto{}
 	for _, key := range keys {
+		if strings.HasSuffix(key, "_prov") || strings.HasSuffix(key, "_txnID") {
+			//The keys with the above suffixes has special meanings. Ignore them
+			continue
+		}
 		val := kv[key]
 		p = append(
 			p,

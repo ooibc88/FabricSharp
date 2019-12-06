@@ -248,7 +248,7 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 				elapsedPut := time.Since(startPut).Nanoseconds() / 1000
 				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v] with %d us", compositeKey, val, txnID, height.BlockNum, depStrs, elapsedPut)
 			} else {
-				logger.Infof("[udb] Key %s has prov suffix", k)
+				logger.Infof("[udb] Key %s has special prov or txnID suffix", k)
 			} // end if has Suffix
 		}
 	}
