@@ -8,14 +8,15 @@ Thanks to colleagues from [MediLOT](https://medilot.com), [NUS](https://www.comp
 # Quick Start
 * Build the chaincode environment
 ```
-make ccenv
+make ccenv # Will build an image hyperledger/fabric-ccenv:forkbase
 ```
 * Build the peer docker image
 ```
-DOCKER_DYNAMIC_LINK=true make peer-docker
+DOCKER_DYNAMIC_LINK=true make peer-docker # Will build an image hyperledger/fabric-peer:forkbase
 ```
 __NOTE__: FabricSharp relies on ForkBase[3] as the storage engine, which is close-sourced.
 Hence FabricSharp can only be built and run within the docker container. Running `make peer` may fail. So far FabricSharp only touches on _peer_ process. Other executables remain intact and other cmds in Makefile should function the same as before. 
+__NOTE__: Always start the peer container with the following environment variable to enable for the above-built chaincode environment. `CORE_CHAINCODE_BUILDER=hyperledger/fabric-ccenv:forkbase`
 
 # Architecture
 ![architecture](architecture.png)
