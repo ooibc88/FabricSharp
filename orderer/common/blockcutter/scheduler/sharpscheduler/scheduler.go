@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/common"
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
@@ -20,20 +21,20 @@ type TxnScheduler struct {
 	maxTxnBlkSpan uint64
 	debug         bool
 
-	store            *Mvstore
-	pendingWriteTxns map[string]TxnSet
-	pendingReadTxns  map[string]TxnSet
+	store            *common.Mvstore
+	pendingWriteTxns map[string]common.TxnSet
+	pendingReadTxns  map[string]common.TxnSet
 
 	// The following four fields only involve txns that may participant in the cycle
 	// the first key is the starting blk height of txns in bloomfilter
 	// the second key is the txn identifier
 	// the value bloomfilter encapsulates all the txnID that can reach the txn identifier
-	antiReachables     map[string]*RelayedFilter
+	antiReachables     map[string]*common.RelayedFilter
 	txnCommittedHeight map[string]uint64
 	succTxns           map[string][]string
-	txnAges            *TxnPQueue
+	txnAges            *common.TxnPQueue
 
-	graph       *Graph            // for pending txns only
+	graph       *common.Graph     // for pending txns only
 	txnSnapshot map[string]uint64 // used to calculate txn span
 }
 
@@ -49,15 +50,15 @@ func createTxnScheduler(maxTxnSpan uint64, detailedLog bool, storagePath string)
 	return &TxnScheduler{
 		maxTxnBlkSpan:    maxTxnSpan,
 		debug:            false,
-		store:            NewMvStore(storagePath),
-		pendingWriteTxns: make(map[string]TxnSet),
-		pendingReadTxns:  make(map[string]TxnSet),
+		store:            common.NewMvStore(storagePath),
+		pendingWriteTxns: make(map[string]common.TxnSet),
+		pendingReadTxns:  make(map[string]common.TxnSet),
 
-		antiReachables:     make(map[string]*RelayedFilter),
+		antiReachables:     make(map[string]*common.RelayedFilter),
 		txnCommittedHeight: make(map[string]uint64),
 		succTxns:           make(map[string][]string),
-		txnAges:            NewTxnPQueue(),
-		graph:              NewGraph(),
+		txnAges:            common.NewTxnPQueue(),
+		graph:              common.NewGraph(),
 		txnSnapshot:        make(map[string]uint64),
 	}
 
@@ -94,9 +95,9 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 	}
 
 	startResolveDependency := time.Now()
-	wr := NewTxnSet()
-	antiRw := NewTxnSet()
-	antiPendingRw := NewTxnSet()
+	wr := common.NewTxnSet()
+	antiRw := common.NewTxnSet()
+	antiPendingRw := common.NewTxnSet()
 
 	newReadKeys := make([]string, 0) // newly read keys without overriden before
 	filter := func(txn string) bool {
@@ -121,8 +122,8 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 		}
 	} // end for readKey
 
-	ww := NewTxnSet()
-	rw := NewTxnSet()
+	ww := common.NewTxnSet()
+	rw := common.NewTxnSet()
 
 	for _, writeKey := range writeSets {
 		// do not consider to ww conflicts with the pending txns, as they are all reorderable
@@ -143,12 +144,12 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 
 	// Update the accessibility info and detect cycle in the meantime
 	startTestAccessibility := time.Now()
-	curPredTxns := NewTxnSet()
+	curPredTxns := common.NewTxnSet()
 	curPredTxns.InPlaceUnion(wr)
 	curPredTxns.InPlaceUnion(rw)
 	curPredTxns.InPlaceUnion(ww)
 
-	curSuccTxns := NewTxnSet()
+	curSuccTxns := common.NewTxnSet()
 	curSuccTxns.InPlaceUnion(antiRw)
 	curSuccTxns.InPlaceUnion(antiPendingRw)
 
@@ -168,7 +169,7 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 		scheduler.txnSnapshot[txnID] = snapshot
 	}
 
-	scheduler.antiReachables[txnID] = CreateRelayedFilter(nextCommittedHeight)
+	scheduler.antiReachables[txnID] = common.CreateRelayedFilter(nextCommittedHeight)
 	scheduler.antiReachables[txnID].Add(txnID)
 	// Update outgoing link for incoming txns
 	for curPredTxn := range curPredTxns {
@@ -243,14 +244,14 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 
 	for _, writeKey := range writeSets {
 		if _, found := scheduler.pendingWriteTxns[writeKey]; !found {
-			scheduler.pendingWriteTxns[writeKey] = NewTxnSet()
+			scheduler.pendingWriteTxns[writeKey] = common.NewTxnSet()
 		}
 		scheduler.pendingWriteTxns[writeKey].Add(txnID)
 	}
 
 	for _, newReadKey := range newReadKeys {
 		if _, found := scheduler.pendingReadTxns[newReadKey]; !found {
-			scheduler.pendingReadTxns[newReadKey] = NewTxnSet()
+			scheduler.pendingReadTxns[newReadKey] = common.NewTxnSet()
 		}
 		scheduler.pendingReadTxns[newReadKey].Add(txnID)
 	}
@@ -379,13 +380,13 @@ func (scheduler *TxnScheduler) ProcessBlk(blkHeight uint64) []string {
 		} // end if len
 	}
 	// clear the pendingWriteTxns
-	scheduler.pendingWriteTxns = make(map[string]TxnSet)
+	scheduler.pendingWriteTxns = make(map[string]common.TxnSet)
 
 	for readKey, pendingTxns := range scheduler.pendingReadTxns {
 		committedReads[readKey] = pendingTxns.ToSlice()
 	}
 
-	scheduler.pendingReadTxns = make(map[string]TxnSet)
+	scheduler.pendingReadTxns = make(map[string]common.TxnSet)
 	elapsedResolvePendingTxn = time.Since(start).Nanoseconds() / 1000
 
 	///////////////////////////////////////////////////////////////////
@@ -437,7 +438,7 @@ func (scheduler *TxnScheduler) ProcessBlk(blkHeight uint64) []string {
 
 func (scheduler *TxnScheduler) topoTraverseForWw(startTxns []string) (counter int) {
 	counter = 0
-	topoOrder := TopoOrder(startTxns, func(from string) []string {
+	topoOrder := common.TopoOrder(startTxns, func(from string) []string {
 		return scheduler.succTxns[from]
 	})
 	// Propogate the ww dependency based on the computed topo order

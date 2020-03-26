@@ -1,4 +1,4 @@
-package sharpscheduler
+package common
 
 import (
 	"fmt"
@@ -40,8 +40,10 @@ func (s TxnSet) Exists(element string) bool {
 	}
 }
 
-func (s TxnSet) Add(element string) {
-	s[element] = true
+func (s TxnSet) Add(elements ...string) {
+	for _, e := range elements {
+		s[e] = true
+	}
 }
 
 func (s TxnSet) String() string {

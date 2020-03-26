@@ -1,4 +1,4 @@
-package sharpscheduler
+package common
 
 import (
 	"bytes"
@@ -97,6 +97,24 @@ func (s *Mvstore) Commit(blkHeight uint64, updates, reads map[string][]string) e
 	return s.db.Write(batch, nil)
 }
 
+func (s *Mvstore) BatchUpdate(updates map[string]string) error {
+	batch := new(leveldb.Batch)
+	for key, value := range updates {
+		batch.Put([]byte(key), []byte(value))
+	}
+	return s.db.Write(batch, nil)
+}
+
+func (s *Mvstore) Get(key string) string {
+	if val, err := s.db.Get([]byte(key), nil); err == leveldb.ErrNotFound {
+		return ""
+	} else if err != nil {
+		panic("LevelDB get fails with error " + err.Error())
+	} else {
+		return string(val)
+	}
+}
+
 func (s *Mvstore) LastUpdatedTxnNoLaterThanBlk(blkHeight uint64, key string, isValid func(txn string) bool) (txn string, found bool) {
 	it := s.db.NewIterator(nil, nil)
 	if it.Seek(writeCompositeKey(key, blkHeight+1, 0)); it.Prev() {
@@ -148,6 +166,29 @@ func (s *Mvstore) ReadTxnsEarlierThanBlk(blkHeight uint64, key string, isValid f
 		}
 		if txn := string(it.Value()); isValid(txn) {
 			txns.Add(txn)
+		}
+	}
+	it.Release()
+	return
+}
+
+func (s *Mvstore) ReadTxnsNoEarlierThanBlk(blkHeight uint64, key string) (txns TxnSet) {
+	txns = NewTxnSet()
+	it := s.db.NewIterator(nil, nil)
+	if exists := it.Seek(readCompositeKey(key, blkHeight, 0)); !exists {
+		return
+	}
+
+	for true {
+		if actualOp, actualKey, actualBlk, actualSeq, err := parseCompositeKey(it.Key()); !(err == nil && bytes.Compare(actualOp, READ_PREFIX) == 0 && actualKey == key && blkHeight <= actualBlk) {
+			break
+		} else if actualSeq == 0 {
+			txns = NewTxnSet() // ignore all preceding txns
+		} else {
+			txns.Add(string(it.Value()))
+		}
+		if !it.Next() {
+			break
 		}
 	}
 	it.Release()

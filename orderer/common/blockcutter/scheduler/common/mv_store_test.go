@@ -4,7 +4,7 @@ Copyright IBM Corp. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package sharpscheduler
+package common
 
 import (
 	"bytes"
@@ -51,17 +51,25 @@ func TestMvStore(t *testing.T) {
 	path := "/tmp/leveldb"
 	os.RemoveAll(path)
 
-	blk := uint64(1)
 	store := NewMvStore(path)
 	keyA := "A"
 	keyB := "B"
 	keyC := "C"
 	keyD := "D"
 	keyE := "E"
-	updates := map[string][]string{
+
+	blk := uint64(0)
+	reads := map[string][]string{
+		keyD: []string{"tx0"},
+	}
+	updates := map[string][]string{}
+	assert.NoError(t, store.Commit(blk, updates, reads))
+
+	blk = uint64(1)
+	updates = map[string][]string{
 		keyD: []string{"tx1", "tx2"},
 	}
-	reads := map[string][]string{}
+	reads = map[string][]string{}
 	assert.NoError(t, store.Commit(blk, updates, reads))
 
 	blk = uint64(2)
@@ -96,10 +104,13 @@ func TestMvStore(t *testing.T) {
 	Read Records:
 	B_4_0: nil,
 	B_5_0: nil,
+	D_0_1: tx0
 	D_1_0: nil
 	D_2_1: tx3,
 	D_2_2: tx4
 	*/
+	// Iterate all keys
+	// Iterate(store)
 
 	_, found := store.LastUpdatedTxnNoLaterThanBlk(2, keyA, func(string) bool { return true })
 	assert.False(t, found)
@@ -151,9 +162,16 @@ func TestMvStore(t *testing.T) {
 	assert.Equal(t, empty, store.ReadTxnsEarlierThanBlk(3, keyC, func(string) bool { return true }))
 
 	assert.Equal(t, NewTxnSetWith("tx3", "tx4"), store.ReadTxnsEarlierThanBlk(3, keyD, func(string) bool { return true }))
+	assert.Equal(t, NewTxnSetWith("tx3", "tx4"), store.ReadTxnsNoEarlierThanBlk(0, keyD))
+	assert.Equal(t, NewTxnSetWith("tx3", "tx4"), store.ReadTxnsNoEarlierThanBlk(1, keyD))
+	assert.Equal(t, NewTxnSetWith("tx3", "tx4"), store.ReadTxnsNoEarlierThanBlk(2, keyD))
+	assert.Equal(t, empty, store.ReadTxnsNoEarlierThanBlk(3, keyD))
+
 	assert.Equal(t, empty, store.ReadTxnsEarlierThanBlk(1, keyE, func(string) bool { return true }))
 	assert.Equal(t, empty, store.ReadTxnsEarlierThanBlk(3, keyE, func(string) bool { return true }))
-	// Iterate all keys
-	// Iterate(store)
 
+	updateBatch := map[string]string{"A": "a", "B": "b", "C": "c"}
+	assert.NoError(t, store.BatchUpdate(updateBatch))
+	assert.Equal(t, "a", store.Get("A"))
+	assert.Equal(t, "", store.Get("D"))
 }
