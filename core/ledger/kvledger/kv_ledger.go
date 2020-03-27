@@ -25,6 +25,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
@@ -260,7 +261,7 @@ func (l *kvLedger) CommitWithPvtData(pvtdataAndBlock *ledger.BlockAndPvtData) er
 	startStateValidation := time.Now()
 	logger.Debugf("[%s] Validating state for block [%d]", l.ledgerID, blockNo)
 	// err = l.txtmgmt.ValidateAndPrepare(pvtdataAndBlock, true)
-	err = l.txtmgmt.ValidateAndPrepare(pvtdataAndBlock, false)
+	err = l.txtmgmt.ValidateAndPrepare(pvtdataAndBlock, localconfig.NeedsMvcc())
 	if err != nil {
 		return err
 	}

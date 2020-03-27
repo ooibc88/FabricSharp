@@ -138,7 +138,7 @@ func (scheduler *TxnScheduler) ProcessTxn(readSets, writeSets []string, snapshot
 	var txnType TxnType
 	for _, txn := range antiRW.ToSlice() {
 		if scheduler.getTxnType(txn) == OutAntiRw || scheduler.getTxnType(txn) == OutCRw {
-			action = "AntiRw-Abort"
+			action = "AntiRw-Abort Txn"
 			return false
 		}
 		txnType = OutAntiRw

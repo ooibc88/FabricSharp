@@ -20,9 +20,15 @@ func MustGetSchedulerType() SchedulerType {
 		return FoccStandard
 	} else if schedulerType == "sharp" {
 		return FoccSharp
+	} else if schedulerType == "" {
+		return FoccSharp
 	} else {
 		panic("Unrecognized Scheduler type " + schedulerType)
 	}
+}
+
+func NeedsMvcc() bool {
+	return MustGetSchedulerType() == FoccLatest
 }
 
 func MustGetStoragePath() string {

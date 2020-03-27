@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package statebasedval
 
 import (
+	"fmt"
+
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
@@ -98,6 +100,7 @@ func (v *Validator) ValidateAndPrepareBatch(block *internal.Block, doMVCCValidat
 	}
 
 	updates := internal.NewPubAndHashUpdates()
+	inValidCount := 0
 	for _, tx := range block.Txs {
 		var validationCode peer.TxValidationCode
 		var err error
@@ -113,8 +116,10 @@ func (v *Validator) ValidateAndPrepareBatch(block *internal.Block, doMVCCValidat
 		} else {
 			logger.Warningf("Block [%d] Transaction index [%d] TxId [%s] marked as invalid by state validator. Reason code [%s]",
 				block.Num, tx.IndexInBlock, tx.ID, validationCode.String())
+			inValidCount++
 		}
 	}
+	logger.Infof("# of conflicted txns: %d", inValidCount)
 	return updates, nil
 }
 
@@ -184,17 +189,29 @@ func (v *Validator) validateKVRead(ns string, kvRead *kvrwset.KVRead, updates *p
 	}
 	committedVersion, err := v.db.GetVersion(ns, kvRead.Key)
 	if err != nil {
-		return false, err
+		panic(fmt.Sprintf("Fail to get version for key %s", kvRead.Key))
 	}
-
-	logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
-		kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
-	if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
-		logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
-			ns, kvRead.Key, committedVersion, kvRead.Version)
-		return false, nil
+	readVersion := rwsetutil.NewVersion(kvRead.Version)
+	// Unlike lockbased simulator, reading a non-empty key will return a non-nil version,
+	//   which is the snapshot block height.
+	// Hence, we can not directly compare readVersion and committedVersion for the validity.
+	if committedVersion == nil {
+		// read a non-existent key.
+		return true, nil
+	} else {
+		return committedVersion.BlockNum <= readVersion.BlockNum, nil
 	}
-	return true, nil
+	// if err != nil {
+	// 	return false, err
+	// }
+	// logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
+	// 	kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
+	// if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
+	// 	logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
+	// 		ns, kvRead.Key, committedVersion, kvRead.Version)
+	// 	return false, nil
+	// }
+	// return true, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////

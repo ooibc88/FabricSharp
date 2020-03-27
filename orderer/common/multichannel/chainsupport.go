@@ -11,6 +11,7 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/latestscheduler"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/sharpscheduler"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/standardscheduler"
 	oc "github.com/hyperledger/fabric/orderer/common/localconfig"
@@ -53,6 +54,8 @@ func newChainSupport(
 		scheduler = sharpscheduler.NewTxnScheduler()
 	} else if schedulerType == oc.FoccStandard {
 		scheduler = standardscheduler.NewTxnScheduler()
+	} else if schedulerType == oc.FoccLatest {
+		scheduler = latestscheduler.NewTxnScheduler()
 	} else {
 		panic("unrecognized scheduler type...")
 	}

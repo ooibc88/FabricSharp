@@ -40,6 +40,12 @@ func (s TxnSet) Exists(element string) bool {
 	}
 }
 
+func (s TxnSet) Remove(elements ...string) {
+	for _, e := range elements {
+		delete(s, e)
+	}
+}
+
 func (s TxnSet) Add(elements ...string) {
 	for _, e := range elements {
 		s[e] = true

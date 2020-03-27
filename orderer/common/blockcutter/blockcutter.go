@@ -177,12 +177,9 @@ func (r *receiver) Cut() []*cb.Envelope {
 	batch = append(batch, r.pendingNonEndorseTxnBatch...)
 	for _, txnID := range schedule {
 		batch = append(batch, r.pendingBatch[txnID])
-		delete(r.pendingBatch, txnID)
-	}
-	if len(r.pendingBatch) != 0 {
-		panic("Should exhaust all the pending txns")
 	}
 	r.pendingBatchSizeBytes = 0
+	r.pendingBatch = make(map[string]*cb.Envelope)
 	r.blkHeight++
 	return batch
 }
