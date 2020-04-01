@@ -23,7 +23,7 @@ make orderer-docker
 SCHEDULER_TYPE=sharp STORE_PATH=/tmp/mvs TXN_SPAN_LIMIT=10 [...other configurations] orderer > orderer.log
 ```
 ```
-SCHEDULER_TYPE=sharp [...other configurations] peer > peer.log
+SCHEDULER_TYPE=sharp [...other configurations] peer node start > peer.log
 ```
 * `STORE_PATH` is the directory path of the LevelDB instance that implements the multi-versioned storage, used to compute the transaction dependency. The directory will be emptied **every time** that the binary runs. 
 * `TXN_SPAN_LIMIT` restricts the maximum block span of a transaction, as described in the paper. 
@@ -33,7 +33,7 @@ SCHEDULER_TYPE=sharp [...other configurations] peer > peer.log
 SCHEDULER_TYPE=standard STORE_PATH=/tmp/mvs [...other configurations] orderer > orderer.log
 ```
 ```
-SCHEDULER_TYPE=standard [...other configurations] peer > peer.log
+SCHEDULER_TYPE=standard [...other configurations] peer node start > peer.log
 ```
 * `STORE_PATH` is similar as above.
 
@@ -42,7 +42,7 @@ SCHEDULER_TYPE=standard [...other configurations] peer > peer.log
  SCHEDULER_TYPE=latest [...other configurations] orderer > orderer.log
 ```
 ```
-SCHEDULER_TYPE=latest [...other configurations] peer > peer.log
+SCHEDULER_TYPE=latest [...other configurations] peer node start > peer.log
 ```
 
 # Note
@@ -60,5 +60,5 @@ SCHEDULER_TYPE=latest [...other configurations] peer > peer.log
   ```
 * We also provide the benchmark contract(chaincode) [custom.go](supplementary/contract/custom.go). In the contract, 
   * we invoke `ReadModifyWrite()` and `function=empty` to get **Figure 1** in **Sec 1 Introduction** in the paper. 
-  * We invokde `ReadWrite()` for the remaining experimental charts. 
+  * We invoke `ReadWrite()` for the remaining experimental charts. 
 * [Old Readme](old_README.md)
