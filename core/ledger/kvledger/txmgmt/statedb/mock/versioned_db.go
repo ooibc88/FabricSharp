@@ -834,4 +834,16 @@ func (fake *VersionedDB) recordInvocation(key string, args []interface{}) {
 	fake.invocations[key] = append(fake.invocations[key], args)
 }
 
+func (fake *VersionedDB) RetrieveLatestSnapshot() uint64 {
+	return 0
+}
+
+func (fake *VersionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	return false
+}
+
+func (fake *VersionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	return nil, nil
+}
+
 var _ statedb.VersionedDB = new(VersionedDB)

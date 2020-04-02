@@ -22,7 +22,9 @@ func (udb *ProvUstoreDB) Put(key, value, txnID string, blk uint64, depKeys []str
 	for _, depKey := range depKeys {
 		vecStr.Add(depKey)
 	}
-	if ok := udb.db.PutState(key, value, txnID, blk, vecStr); !ok {
+	// "NA" implies that we ignore the state snapshot for the dependency.
+	// In other words, the dependency is always on the latest state.
+	if ok := udb.db.PutState(key, value, txnID, blk, vecStr, "NA"); !ok {
 		return errors.New("can't put key " + key + " with value " + value)
 	}
 	return nil

@@ -8,6 +8,7 @@ package privacyenabledstate
 
 import (
 	"encoding/base64"
+	math "math"
 	"strings"
 
 	"github.com/hyperledger/fabric-lib-go/healthz"
@@ -329,7 +330,7 @@ func addPvtUpdates(pubUpdateBatch *PubUpdateBatch, pvtUpdateBatch *PvtUpdateBatc
 	for ns, nsBatch := range pvtUpdateBatch.UpdateMap {
 		for _, coll := range nsBatch.GetCollectionNames() {
 			for key, vv := range nsBatch.GetUpdates(coll) {
-				pubUpdateBatch.Update(derivePvtDataNs(ns, coll), key, vv, "emptytxn")
+				pubUpdateBatch.Update(derivePvtDataNs(ns, coll), key, vv, "emptytxn", math.MaxUint64)
 			}
 		}
 	}
@@ -342,7 +343,7 @@ func addHashedUpdates(pubUpdateBatch *PubUpdateBatch, hashedUpdateBatch *HashedU
 				if base64Key {
 					key = base64.StdEncoding.EncodeToString([]byte(key))
 				}
-				pubUpdateBatch.Update(deriveHashedDataNs(ns, coll), key, vv, "emptytxn")
+				pubUpdateBatch.Update(deriveHashedDataNs(ns, coll), key, vv, "emptytxn", math.MaxUint64)
 			}
 		}
 	}

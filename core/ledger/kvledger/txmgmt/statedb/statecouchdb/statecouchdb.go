@@ -568,6 +568,18 @@ func (vdb *VersionedDB) Close() {
 	// no need to close db since a shared couch instance is used
 }
 
+func (vdb *VersionedDB) RetrieveLatestSnapshot() uint64 {
+	return 0
+}
+
+func (vdb *VersionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	return false
+}
+
+func (vdb *VersionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	return nil, nil
+}
+
 // Savepoint docid (key) for couchdb
 const savepointDocID = "statedb_savepoint"
 

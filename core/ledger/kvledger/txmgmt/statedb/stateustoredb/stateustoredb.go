@@ -6,9 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 package stateustoredb
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"ustore"
 
@@ -46,13 +49,15 @@ func (provider *VersionedDBProvider) Close() {
 
 // VersionedDB implements VersionedDB interface
 type versionedDB struct {
-	udb    ustore.KVDB
-	dbName string
+	lastSnapshot     uint64
+	snapshotVersions map[uint64]string
+	udb              ustore.KVDB
+	dbName           string
 }
 
 // newVersionedDB constructs an instance of VersionedDB
 func newVersionedDB(udb ustore.KVDB, dbName string) *versionedDB {
-	return &versionedDB{udb, dbName}
+	return &versionedDB{0, make(map[uint64]string), udb, dbName}
 }
 
 // Open implements method in VersionedDB interface
@@ -84,7 +89,41 @@ func (vdb *versionedDB) BytesKeySuppoted() bool {
 
 // GetState implements method in VersionedDB interface
 func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.VersionedValue, error) {
+	return vdb.GetSnapshotState(math.MaxUint64, namespace, key)
+}
 
+// GetVersion implements method in VersionedDB interface
+func (vdb *versionedDB) GetVersion(namespace string, key string) (*version.Height, error) {
+	if strings.HasSuffix(key, "_hist") {
+		return version.NewHeight(0, 0), nil
+	} else if strings.HasSuffix(key, "_backward") {
+		return version.NewHeight(0, 0), nil
+	} else if strings.HasSuffix(key, "_forward") {
+		return version.NewHeight(0, 0), nil
+	} else {
+		versionedValue, err := vdb.GetState(namespace, key)
+		if err != nil {
+			return nil, err
+		}
+		if versionedValue == nil {
+			return nil, nil
+		}
+		return versionedValue.Version, nil
+	}
+}
+
+func (vdb *versionedDB) RetrieveLatestSnapshot() uint64 {
+	return atomic.LoadUint64(&vdb.lastSnapshot)
+}
+
+func (vdb *versionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	// by right, we should remove the staled entry in snapshotHashes
+	// But we do not bother to do so as they occupy so few space.
+	return true
+}
+
+func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	logger.Infof("Get ns %s, key %s at snapshot %d", namespace, key, snapshot)
 	zeroVer := version.NewHeight(0, 0)
 	if strings.HasSuffix(key, "_hist") {
 		splits := strings.Split(key, "_")
@@ -177,38 +216,20 @@ func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.Version
 		}
 	} else {
 		compositeKey := constructCompositeKey(namespace, key)
-		if histResult := vdb.udb.Hist(compositeKey, 4294967295); histResult.Status().IsNotFound() {
+		if histResult := vdb.udb.Hist(compositeKey, snapshot); histResult.Status().IsNotFound() {
 			return nil, nil
 		} else if histResult.Status().Ok() {
 			val := []byte(histResult.Value())
 			height := histResult.Blk_idx()
-			logger.Infof("ustoredb.GetState(). ns=%s, key=%s, val=%s, blk_idx=%d", namespace, key, val, height)
-			ver := version.NewHeight(height, 0)
+			logger.Infof("ustoredb.SnapshotGetState(). ns=%s, snapshot=%d, key=%s, val=%s, blk_idx=%d", namespace, snapshot, key, val, height)
+			ver := version.NewHeight(snapshot, 0)
+			if snapshot == math.MaxUint64 { // it is called by the GetState() or GetVersion()
+				ver = version.NewHeight(height, 0)
+			}
 			return &statedb.VersionedValue{Version: ver, Value: val, Metadata: nil}, nil
 		} else {
 			return nil, errors.New("Fail to get state for Key " + compositeKey + " with status " + histResult.Status().ToString())
 		}
-	}
-
-}
-
-// GetVersion implements method in VersionedDB interface
-func (vdb *versionedDB) GetVersion(namespace string, key string) (*version.Height, error) {
-	if strings.HasSuffix(key, "_hist") {
-		return version.NewHeight(0, 0), nil
-	} else if strings.HasSuffix(key, "_backward") {
-		return version.NewHeight(0, 0), nil
-	} else if strings.HasSuffix(key, "_forward") {
-		return version.NewHeight(0, 0), nil
-	} else {
-		versionedValue, err := vdb.GetState(namespace, key)
-		if err != nil {
-			return nil, err
-		}
-		if versionedValue == nil {
-			return nil, nil
-		}
-		return versionedValue.Version, nil
 	}
 }
 
@@ -223,8 +244,8 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 		for k, vv := range updates {
 			compositeKey := constructCompositeKey(ns, k)
 			logger.Infof("[udb] ApplyUpdates: Channel [%s]: Applying key(string)=[%s] value(string)=[%s]", vdb.dbName, string(compositeKey), string(vv.Value))
-			if !strings.HasSuffix(k, "_prov") && !strings.HasSuffix(k, "_txnID") {
-				logger.Infof("[udb] Key %s does NOT have prov suffix", k)
+			if !strings.HasSuffix(k, "_prov") && !strings.HasSuffix(k, "_txnID") && !strings.HasSuffix(k, "_snapshot") {
+				// logger.Infof("[udb] Key %s is normal", k)
 				val := string(vv.Value)
 				depList := ustore.NewVecStr()
 				depStrs := make([]string, 0)
@@ -243,10 +264,25 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 				if txnIDVal, ok := updates[k+"_txnID"]; ok {
 					txnID = string(txnIDVal.Value)
 				}
+				var snapshotVersion string
+				var snapshot uint64
+				if snapshotVal, ok := updates[k+"_snapshot"]; ok {
+					snapshot = binary.LittleEndian.Uint64(snapshotVal.Value)
+					if snapshot == math.MaxUint64 {
+						// this could happen if the txn is update-only.
+						snapshotVersion = ""
+					} else {
+						snapshotVersion = vdb.snapshotVersions[snapshot]
+					}
+				} else {
+					snapshotVersion = ""
+					// 	panic(fmt.Sprintf("Fail to find the snapshot for key %s", k))
+				}
+
 				startPut := time.Now()
-				vdb.udb.PutState(compositeKey, val, txnID, height.BlockNum, depList)
+				vdb.udb.PutState(compositeKey, val, txnID, height.BlockNum, depList, snapshotVersion)
 				elapsedPut := time.Since(startPut).Nanoseconds() / 1000
-				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v] with %d us", compositeKey, val, txnID, height.BlockNum, depStrs, elapsedPut)
+				logger.Infof("[udb] PutState key [%s], val [%s], txnID [%s], blk idx [%d], dep_list [%v], snapshot=%d with %d us", compositeKey, val, txnID, height.BlockNum, depStrs, snapshot, elapsedPut)
 			} else {
 				logger.Infof("[udb] Key %s has special prov or txnID suffix", k)
 			} // end if has Suffix
@@ -257,6 +293,10 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	logger.Infof("[udb] Finish apply batch updates for block %d", blkIdx)
 	if statusStr := vdb.udb.Commit(); !statusStr.GetFirst().Ok() {
 		return errors.New("Fail to commit global state with status " + statusStr.GetFirst().ToString())
+	} else {
+		newVersion := statusStr.GetSecond()
+		vdb.snapshotVersions[blkIdx] = newVersion
+		atomic.StoreUint64(&vdb.lastSnapshot, blkIdx)
 	}
 	elapsedCommit := time.Since(startCommit).Nanoseconds() / 1000
 	logger.Infof("[udb] Finish commit state for block %d with %d us", blkIdx, elapsedCommit)

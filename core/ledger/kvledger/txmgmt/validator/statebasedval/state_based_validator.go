@@ -6,6 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 package statebasedval
 
 import (
+	"fmt"
+	"math"
+	"strings"
+
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
@@ -85,6 +89,32 @@ func (v *Validator) preLoadCommittedVersionOfRSet(block *internal.Block) error {
 	return nil
 }
 
+func validKey(key string) bool {
+	// The keys without the following suffix have special meanings.
+	// And should be ignored for reordering.
+	if strings.HasSuffix(key, "_prov") {
+		return false
+	}
+
+	if strings.HasSuffix(key, "_txnID") {
+		return false
+	}
+
+	if strings.HasSuffix(key, "_hist") {
+		return false
+	}
+
+	if strings.HasSuffix(key, "_forward") {
+		return false
+	}
+
+	if strings.HasSuffix(key, "_backward") {
+		return false
+	}
+
+	return true
+}
+
 // ValidateAndPrepareBatch implements method in Validator interface
 func (v *Validator) ValidateAndPrepareBatch(block *internal.Block, doMVCCValidation bool) (*internal.PubAndHashUpdates, error) {
 	// Check whether statedb implements BulkOptimizable interface. For now,
@@ -106,10 +136,29 @@ func (v *Validator) ValidateAndPrepareBatch(block *internal.Block, doMVCCValidat
 		}
 
 		tx.ValidationCode = validationCode
+		var snapshot uint64 = math.MaxUint64
+
+		// s := fmt.Sprintf("Txn %s has namespaces: ", tx.ID)
+		// for i, n := range tx.RWSet.NsRwSets {
+		// 	s += fmt.Sprintf(" [%d] %s, ", i, n.NameSpace)
+		// }
+		nsNamespace := ""
+		// the actual read/write keys is located in the SECOND namespace.
+		if len(tx.RWSet.NsRwSets) > 1 && !strings.HasSuffix(tx.RWSet.NsRwSets[1].NameSpace, "scc") {
+			ns := tx.RWSet.NsRwSets[1]
+			nsNamespace = ns.NameSpace
+			for _, read := range ns.KvRwSet.Reads {
+				if readKey := read.GetKey(); validKey(readKey) {
+					// all read key versions should have the same block number, as they are retrieved from the identical snapshot
+					snapshot = read.GetVersion().GetBlockNum()
+				}
+			}
+		}
+		logger.Infof("Save ns %s at txn %s for snapshot %d", nsNamespace, tx.ID, snapshot)
 		if validationCode == peer.TxValidationCode_VALID {
 			logger.Debugf("Block [%d] Transaction index [%d] TxId [%s] marked as valid by state validator", block.Num, tx.IndexInBlock, tx.ID)
 			committingTxHeight := version.NewHeight(block.Num, uint64(tx.IndexInBlock))
-			updates.ApplyWriteSet(tx.RWSet, committingTxHeight, v.db, tx.ID)
+			updates.ApplyWriteSet(tx.RWSet, committingTxHeight, v.db, tx.ID, snapshot)
 		} else {
 			logger.Warningf("Block [%d] Transaction index [%d] TxId [%s] marked as invalid by state validator. Reason code [%s]",
 				block.Num, tx.IndexInBlock, tx.ID, validationCode.String())
@@ -184,16 +233,25 @@ func (v *Validator) validateKVRead(ns string, kvRead *kvrwset.KVRead, updates *p
 	}
 	committedVersion, err := v.db.GetVersion(ns, kvRead.Key)
 	if err != nil {
-		return false, err
+		panic(fmt.Sprintf("Fail to get version for key %s", kvRead.Key))
+		// return false, err
 	}
 
-	logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
-		kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
-	if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
-		logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
-			ns, kvRead.Key, committedVersion, kvRead.Version)
-		return false, nil
+	readVersion := rwsetutil.NewVersion(kvRead.Version)
+	if committedVersion == nil {
+		// read a non-existent key.
+		return true, nil
+	} else {
+		return committedVersion.BlockNum <= readVersion.BlockNum, nil
 	}
+
+	// logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
+	//      kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
+	// if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
+	//      logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
+	//              ns, kvRead.Key, committedVersion, kvRead.Version)
+	//      return false, nil
+	// }
 	return true, nil
 }
 

@@ -78,6 +78,18 @@ func (vdb *versionedDB) BytesKeySupported() bool {
 	return true
 }
 
+func (vdb *versionedDB) RetrieveLatestSnapshot() uint64 {
+	return 0
+}
+
+func (vdb *versionedDB) ReleaseSnapshot(snapshot uint64) bool {
+	return false
+}
+
+func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	return nil, nil
+}
+
 // GetState implements method in VersionedDB interface
 func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.VersionedValue, error) {
 	logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)

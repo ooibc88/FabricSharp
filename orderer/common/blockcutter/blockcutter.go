@@ -127,18 +127,20 @@ func (r *receiver) scheduleMsg(msg *cb.Envelope) bool {
 	readKeys := make([]string, 0)
 
 	readSnapshot := r.blkHeight // if there are no read keys, readSnapshot is useless. Just set it to the next block height
-	ns := txRWSet.NsRwSets[0]   // the actual read/write keys is located in the first namespace.
-	for _, write := range ns.KvRwSet.Writes {
-		if writeKey := write.GetKey(); validKey(writeKey) {
-			writeKeys = append(writeKeys, writeKey)
+	if 1 < len(txRWSet.NsRwSets) {
+		ns := txRWSet.NsRwSets[1] // the actual read/write keys is located in the SECOND namespace.
+		for _, write := range ns.KvRwSet.Writes {
+			if writeKey := write.GetKey(); validKey(writeKey) {
+				writeKeys = append(writeKeys, writeKey)
+			}
 		}
-	}
 
-	for _, read := range ns.KvRwSet.Reads {
-		if readKey := read.GetKey(); validKey(readKey) {
-			// all read key versions should have the same block number, as they are retrieved from the identical snapshot
-			readSnapshot = read.GetVersion().GetBlockNum()
-			readKeys = append(readKeys, readKey)
+		for _, read := range ns.KvRwSet.Reads {
+			if readKey := read.GetKey(); validKey(readKey) {
+				// all read key versions should have the same block number, as they are retrieved from the identical snapshot
+				readSnapshot = read.GetVersion().GetBlockNum()
+				readKeys = append(readKeys, readKey)
+			}
 		}
 	}
 

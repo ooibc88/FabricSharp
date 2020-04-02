@@ -7,7 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package statedb
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -72,6 +74,10 @@ type VersionedDB interface {
 	Open() error
 	// Close closes the db
 	Close()
+
+	RetrieveLatestSnapshot() uint64
+	ReleaseSnapshot(snapshot uint64) bool
+	GetSnapshotState(snapshot uint64, namespace string, key string) (*VersionedValue, error)
 }
 
 //BulkOptimizable interface provides additional functions for
@@ -160,22 +166,22 @@ func (batch *UpdateBatch) Get(ns string, key string) *VersionedValue {
 }
 
 // Put adds a key with value only. The metadata is assumed to be nil
-func (batch *UpdateBatch) Put(ns string, key string, value []byte, version *version.Height, txnID string) {
-	batch.PutValAndMetadata(ns, key, value, nil, version, txnID)
+func (batch *UpdateBatch) Put(ns string, key string, value []byte, version *version.Height, txnID string, snapshot uint64) {
+	batch.PutValAndMetadata(ns, key, value, nil, version, txnID, snapshot)
 }
 
 // PutValAndMetadata adds a key with value and metadata
 // TODO introducing a new function to limit the refactoring. Later in a separate CR, the 'Put' function above should be removed
-func (batch *UpdateBatch) PutValAndMetadata(ns string, key string, value []byte, metadata []byte, version *version.Height, txnID string) {
+func (batch *UpdateBatch) PutValAndMetadata(ns string, key string, value []byte, metadata []byte, version *version.Height, txnID string, snapshot uint64) {
 	if value == nil {
 		panic("Nil value not allowed. Instead call 'Delete' function")
 	}
-	batch.Update(ns, key, &VersionedValue{value, metadata, version}, txnID)
+	batch.Update(ns, key, &VersionedValue{value, metadata, version}, txnID, snapshot)
 }
 
 // Delete deletes a Key and associated value
-func (batch *UpdateBatch) Delete(ns string, key string, version *version.Height, txnID string) {
-	batch.Update(ns, key, &VersionedValue{nil, nil, version}, txnID)
+func (batch *UpdateBatch) Delete(ns string, key string, version *version.Height, txnID string, snapshot uint64) {
+	batch.Update(ns, key, &VersionedValue{nil, nil, version}, txnID, snapshot)
 }
 
 // Exists checks whether the given key exists in the batch
@@ -200,12 +206,18 @@ func (batch *UpdateBatch) GetUpdatedNamespaces() []string {
 }
 
 // Update updates the batch with a latest entry for a namespace and a key
-func (batch *UpdateBatch) Update(ns string, key string, vv *VersionedValue, txnID string) {
+func (batch *UpdateBatch) Update(ns string, key string, vv *VersionedValue, txnID string, snapshot uint64) {
 	batch.getOrCreateNsUpdates(ns).m[key] = vv
 	// a normal key update
 	if strings.HasSuffix(key, "_prov") {
 		normalKey := strings.Split(key, "_")[0]
 		batch.getOrCreateNsUpdates(ns).m[normalKey+"_txnID"] = &VersionedValue{Value: []byte(txnID), Metadata: nil, Version: nil}
+	} else if snapshot != math.MaxUint64 {
+		// this is a normal write. Write its snapshot in addition.
+		snapshotBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(snapshotBytes, snapshot)
+		batch.getOrCreateNsUpdates(ns).m[key+"_snapshot"] = &VersionedValue{Value: snapshotBytes, Metadata: nil, Version: version.NewHeight(snapshot, 0)}
+		fmt.Printf("Snapshot for ns: %s and key: %s = %d\n", ns, key, snapshot)
 	}
 }
 
