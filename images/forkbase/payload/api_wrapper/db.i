@@ -44,7 +44,8 @@ class KVDB {
   std::pair<Status, std::string> Commit();
 
   bool PutState(const std::string& key, const std::string& val, const std::string& txnID,
-                unsigned long long blk, const std::vector<std::string>& deps);
+                unsigned long long blk, const std::vector<std::string>& deps, 
+                const std::string& snapshotVersion);
 
   HistReturn Hist(const std::string& key, unsigned long long blk_idx); 
 

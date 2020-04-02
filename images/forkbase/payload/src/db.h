@@ -63,7 +63,9 @@ class KVDB {
   // Update the state with the given block number and the dependent state identifiers
   bool PutState(const std::string& key, const std::string& val,
                 const std::string& txnID,
-                ull blk, const std::vector<std::string>& deps);
+                ull blk, const std::vector<std::string>& deps, 
+                const std::string& snapshotVersion = "NA");
+  
                 
 // Three relevant APIs for the historical or provenance query
 //    default to be largetest ull to retrieve the latest value
@@ -87,6 +89,8 @@ class KVDB {
   bool DASLAppend(const std::string& key, ull blk_idx, 
                   std::vector<ull>* pre_blks, 
                   std::vector<std::string>* pre_versions);
+
+  ustore::Slice GetDepVersionSlice(const std::string& key, const std::string& snapshotVersion);
 
 
   static std::string MarshalProv(ull blk_idx, const std::string& txnID,

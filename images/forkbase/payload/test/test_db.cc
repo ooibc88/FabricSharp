@@ -174,4 +174,126 @@ TEST(GoDB, DAG_Only) {
   fr = db.Forward("k1", 0); // too small blk_idx
   ASSERT_FALSE(fr.status().ok()); // Wrong here!!
 
+  // Test for generic storage api
+  std::string gk = "kkk";
+  ASSERT_TRUE(db.Put(gk, "v").ok());
+  std::string val;
+  ASSERT_TRUE(db.Get(gk, &val).ok());
+  ASSERT_EQ("v", val);
+
+  ASSERT_TRUE(db.Put(gk, "vv").ok());
+  ASSERT_TRUE(db.Get(gk, &val).ok());
+  ASSERT_EQ("vv", val);
+}
+
+
+TEST(GoDB, Snapshot) {
+// NOTE: clean ustore storage each time before testing
+// by invoking ./bin/ustore_clean.sh
+  KVDB db;
+  Status init_status = db.InitGlobalState();
+  ASSERT_TRUE(init_status.ok());
+
+  ASSERT_TRUE(db.PutState("kk0", "val", "txn1", 1, {}, ""));
+  ASSERT_TRUE(db.PutState("kk1", "val", "txn1", 1, {}, ""));
+  ASSERT_TRUE(db.PutState("kk2", "val", "txn1", 1, {}, ""));
+  ASSERT_TRUE(db.PutState("kk3", "val", "txn1", 1, {}, ""));
+  auto status1 = db.Commit();
+  ASSERT_TRUE(status1.first.ok());
+  std::string snapshot1 = status1.second;
+
+  ASSERT_TRUE(db.PutState("kk0", "val", "txn2", 2, {"kk0", "kk1", "kk2"}, snapshot1));
+  auto status2 = db.Commit();
+  ASSERT_TRUE(status2.first.ok());
+  std::string snapshot2 = status2.second;
+
+  ASSERT_TRUE(db.PutState("kk1", "val", "txn3", 3, {"kk0", "kk1"}, snapshot1));
+  ASSERT_TRUE(db.PutState("kk2", "val", "txn2", 3, {"kk0", "kk2"}, snapshot2));
+  auto status3 = db.Commit();
+  ASSERT_TRUE(status3.first.ok());
+  std::string snapshot3 = status3.second;
+
+  ASSERT_TRUE(db.PutState("kk2", "val", "txn4", 4, {"kk0", "kk2", "kk3"}, snapshot2));
+  auto status4 = db.Commit();
+  ASSERT_TRUE(status4.first.ok());
+  std::string snapshot4 = status3.second;
+
+
+  BackwardReturn br = db.Backward("kk1", 3);
+  ASSERT_TRUE(br.status().ok());
+
+  ASSERT_EQ(size_t(2), br.dep_keys().size());
+  ASSERT_EQ(size_t(2), br.dep_blk_idx().size());
+
+  ASSERT_EQ("kk0", br.dep_keys()[0]);
+  ASSERT_EQ("kk1", br.dep_keys()[1]);
+
+  ASSERT_EQ(1, int(br.dep_blk_idx()[0]));
+  ASSERT_EQ(1, int(br.dep_blk_idx()[1]));
+
+  br = db.Backward("kk2", 3);
+  ASSERT_TRUE(br.status().ok());
+
+  ASSERT_EQ(size_t(2), br.dep_keys().size());
+  ASSERT_EQ(size_t(2), br.dep_blk_idx().size());
+
+  ASSERT_EQ("kk0", br.dep_keys()[0]);
+  ASSERT_EQ("kk2", br.dep_keys()[1]);
+
+  ASSERT_EQ(2, int(br.dep_blk_idx()[0]));
+  ASSERT_EQ(1, int(br.dep_blk_idx()[1]));
+
+  br = db.Backward("kk2", 5);
+  ASSERT_TRUE(br.status().ok());
+
+  ASSERT_EQ(size_t(3), br.dep_keys().size());
+  ASSERT_EQ(size_t(3), br.dep_blk_idx().size());
+
+  ASSERT_EQ("kk0", br.dep_keys()[0]);
+  ASSERT_EQ("kk2", br.dep_keys()[1]);
+  ASSERT_EQ("kk3", br.dep_keys()[2]);
+
+  ASSERT_EQ(2, int(br.dep_blk_idx()[0]));
+  ASSERT_EQ(1, int(br.dep_blk_idx()[1]));
+  ASSERT_EQ(1, int(br.dep_blk_idx()[1]));
+
+
+  ForwardReturn fr = db.Forward("kk0", 3);
+  ASSERT_TRUE(fr.status().ok());
+
+  ASSERT_EQ(size_t(2), fr.forward_keys().size()); 
+  ASSERT_EQ("kk2", fr.forward_keys()[0]);
+  ASSERT_EQ("kk2", fr.forward_keys()[1]);
+  
+  ASSERT_EQ(size_t(2), fr.forward_blk_idx().size()); 
+  ASSERT_EQ(size_t(3), fr.forward_blk_idx()[0]);
+  ASSERT_EQ(size_t(4), fr.forward_blk_idx()[1]);
+
+  fr = db.Forward("kk0", 1);
+  ASSERT_TRUE(fr.status().ok());
+  
+  // By right, it should return two states. 
+  // The one missing state is kk1 at blk 3. 
+  // It is because when kk1 at blk3 is committed, kk0 at blk1 is already staled. 
+  // Hece it can not be captured for the forward query. 
+  // Refer to the comment in db.cc for details. 
+
+  ASSERT_EQ(size_t(1), fr.forward_keys().size()); 
+  ASSERT_EQ("kk0", fr.forward_keys()[0]);
+  
+  ASSERT_EQ(size_t(1), fr.forward_blk_idx().size()); 
+  ASSERT_EQ(size_t(2), fr.forward_blk_idx()[0]);
+
+  fr = db.Forward("kk2", 1);
+  ASSERT_TRUE(fr.status().ok());
+  // For the same reason as above, this forward query result misses kk2 at blk 4. 
+
+  ASSERT_EQ(size_t(2), fr.forward_keys().size()); 
+  ASSERT_EQ(size_t(2), fr.forward_blk_idx().size()); 
+
+  ASSERT_EQ("kk0", fr.forward_keys()[0]);
+  ASSERT_EQ("kk2", fr.forward_keys()[1]);
+  
+  ASSERT_EQ(size_t(2), fr.forward_blk_idx()[0]);
+  ASSERT_EQ(size_t(3), fr.forward_blk_idx()[1]);
 }

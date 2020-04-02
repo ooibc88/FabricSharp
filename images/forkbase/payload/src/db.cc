@@ -177,9 +177,24 @@ Status KVDB::Put(const std::string& key, const std::string& value) {
   return Status::OK();
 }
 
+Slice KVDB::GetDepVersionSlice(const std::string& key, const std::string& snapshotVersion) {
+  auto fetch_result = odb_.Get(GLOBAL_STATE_KEY, Hash::FromBase32(snapshotVersion));
+  if (fetch_result.stat != ErrorCode::kOK) {
+    LOG(FATAL) << "Fail to fetch for the state snapshot with version " << snapshotVersion;
+  } else {
+    DLOG(INFO) << "Successfully retrieve the state snapshot with version " << snapshotVersion;
+  }
+  auto stateMap = std::move(fetch_result.value.Map());
+  ustore::Slice key_slice(key);
+  Slice val_slice = stateMap.Get(key_slice);
+
+  return val_slice;
+}
+
 bool KVDB::PutState(const std::string& key, const std::string& value,
                     const std::string& txnID,
-                    ull blk_idx, const std::vector<std::string>& deps) {
+                    ull blk_idx, const std::vector<std::string>& deps, 
+                    const std::string& snapshotVersion) {
 #ifdef DEBUG
   Timer t0;
   t0.Start();
@@ -200,7 +215,9 @@ bool KVDB::PutState(const std::string& key, const std::string& value,
   Timer depTimer;
   depTimer.Start();
 #endif
-  
+  if (snapshotVersion == "" && deps.size() > 0) {
+    LOG(FATAL) << "Empty snapshot version with non-empty dependent keys...";
+  } 
   // Forbid duplicated updated keys in a single block
   if (this->updated_vids_.find(key) != this->updated_vids_.end()) {
     LOG(FATAL) << "Duplicated updates for key " << key;
@@ -211,12 +228,36 @@ bool KVDB::PutState(const std::string& key, const std::string& value,
   std::vector<std::string> dep_vids;
   int self_dependent = 0;
   for (const std::string& dep_key : deps) {
-    if (dep_key == key) self_dependent = 1;
     ustore::Slice dep_slice(dep_key);
-
-    auto val_slice = global_.Get(dep_slice);
+    if (dep_key == key) {
+      if (snapshotVersion == "NA") {
+        self_dependent = 1;
+      } else {
+        // Check whether the vid from the latest state and snapshot state is identical. 
+        Slice val_slice;
+        val_slice = this->GetDepVersionSlice(dep_key, snapshotVersion);
+        if (val_slice.empty()) {
+          LOG(WARNING) << "Fail to find vid for dep key " << key << " in snapshot " << snapshotVersion;
+        } else {
+          Slice latest_slice = global_.Get(dep_slice); 
+          if (latest_slice.empty()) {
+            LOG(WARNING) << "Fail to find vid for dep key " << key << " in  latest state";
+          } else if (val_slice == latest_slice) {
+            self_dependent = 1;
+          }
+        }
+      }
+    } 
+    
+    Slice val_slice;
+    if (snapshotVersion == "NA") {
+      // retrieve the dependent version from the latest state by default. 
+      val_slice = global_.Get(dep_slice);
+    } else {
+      val_slice = this->GetDepVersionSlice(dep_key, snapshotVersion);
+    }
     if (val_slice.empty()) {
-      LOG(WARNING) << "vid for Dep Key " << dep_key << " NOT found.";
+      LOG(WARNING) << "Fail to find vid for dep key " << dep_key << " in snapshot " << snapshotVersion;
     } else {
       dep_keys.push_back(dep_key);
       dep_vids.push_back(val_slice.ToString());
@@ -307,9 +348,26 @@ bool KVDB::PutState(const std::string& key, const std::string& value,
 #endif
   std::string vid = ret.value.ToBase32(); 
   // Associate the current key and vid with each of its dependent key
-  for (const std::string& dep_key : deps) {
-    this->temp_forward_key_vids_[dep_key] += " " + key + " " + vid;
+  for (size_t i = 0; i < dep_keys.size(); i++) {
+    Slice dep_key(dep_keys[i]);
+    Hash dep_version = Hash::FromBase32(dep_vids[i]);
+    if (odb_.IsLatestVersion(dep_key, dep_version).value) {
+      this->temp_forward_key_vids_[dep_keys[i]] += " " + key + " " + vid;
+    } else {
+      // It is possible that a dependent state is in stale version in sharp scheduler,
+      //  as the sharp scheduler allows transactions with antiRW transaction conflicts. 
+      // This is problematic: when we handle with forward dependency, we assume the overrided state
+      // will not be referenced or dependent any more. (Refer to Sec 4.3 in http://www.vldb.org/pvldb/vol12/p975-ruan.pdf for details. )
+
+      // Since this assumption breaks under the sharp scheduler, 
+      // we temporally exclude any staled dependency for the storage of forward dependency. 
+      // Hence the forward dependency query may miss some entries. 
+      // Unfortunately, we haven't found an approach to overcome it. 
+    }
   }
+  // for (const std::string& dep_key : deps) {
+  //   this->temp_forward_key_vids_[dep_key] += " " + key + " " + vid;
+  // }
   
   this->updated_vids_[key] = vid;
              
