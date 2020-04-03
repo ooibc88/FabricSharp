@@ -1,6 +1,6 @@
 # Overview
 FabricSharp (hash)  project is a variant of Hyperledger Fabric 1.4, a permissioned blockchain platform from Hyperledger. 
-Compared with the vanilla version, FabricSharp supports fine-grained secure data provenance, sharding, use of
+Compared with the vanilla version, FabricSharp supports fine-grained secure data provenance, sharding, smart transaction management, use of
 trusted hardware (eg. SGX), and a blockchain native storage engine called ForkBase, to boost system performance.
 
 Thanks to colleagues from [MediLOT](https://medilot.com), [NUS](https://www.comp.nus.edu.sg/~dbsystem/index.html), [SUTD](https://istd.sutd.edu.sg/people/faculty/dinh-tien-tuan-anh), [BIT](http://cs.bit.edu.cn/szdw/jsml/js/zmh/index.htm), [Zhejiang University](https://person.zju.edu.cn/0098112), [MZH Technologies](http://www.mzhtechnologies.com/) and other organizations for their contributions.
@@ -14,16 +14,24 @@ make ccenv # Will build an image hyperledger/fabric-ccenv:forkbase
 ```
 DOCKER_DYNAMIC_LINK=true make peer-docker # Will build an image hyperledger/fabric-peer:forkbase
 ```
+
+* Build the orderer docker image
+```
+make orderer-docker
+```
+
 __NOTE__: FabricSharp relies on ForkBase[3] as the storage engine, which is close-sourced.
-Hence FabricSharp can only be built and run within the docker container. Running `make peer` may fail. So far FabricSharp only touches on _peer_ process. Other executables remain intact and other cmds in Makefile should function the same as before. 
+Hence FabricSharp can only be built and run within the docker container. Running `make peer` may fail.  
 __NOTE__: Always start the peer container with the following environment variable to enable for the above-built chaincode environment. `CORE_CHAINCODE_BUILDER=hyperledger/fabric-ccenv:forkbase`
 
 # Architecture
 ![architecture](architecture.png)
 
 # Progress
-The current master branch incorporates the optimization from [2] on the basis of Fabric v1.4.2. 
-We dedicate another branch __vldb19__, which shows more details about [2], including the experimental baseline, scripts, chaincode examples and so on. 
+The current master branch incorporates the optimization from [2] and [7] on the basis of Fabric v1.4.2. 
+We dedicate another branch __vldb19__, which shows more details only about [2], including the experimental baseline, scripts, chaincode examples and so on. 
+Similarly, branch __sigmod20__ is dedicated for [7]. 
+Refer to branch __vldb19__ on how to write provenance-dependent smart contracts, and __sigmod__ for the snapshot-based transaction management. 
 
 We will soon merge the optimization in [1] to this master branch upon v1.4.2 and similarly dedicate another branch for [1]. 
 
