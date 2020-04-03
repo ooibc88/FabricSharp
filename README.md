@@ -31,7 +31,7 @@ __NOTE__: Always start the peer container with the following environment variabl
 The current master branch incorporates the optimization from [2] and [7] on the basis of Fabric v1.4.2. 
 We dedicate another branch __vldb19__, which shows more details only about [2], including the experimental baseline, scripts, chaincode examples and so on. 
 Similarly, branch __sigmod20__ is dedicated for [7]. 
-Refer to branch __vldb19__ on how to write provenance-dependent smart contracts, and __sigmod20Up__ for the snapshot-based transaction management. 
+Refer to branch __vldb19__ on how to write provenance-dependent smart contracts, and __sigmod20__ for the snapshot-based transaction management. 
 
 We will soon merge the optimization in [1] to this master branch upon v1.4.2 and similarly dedicate another branch for [1]. 
 
