@@ -154,6 +154,7 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 		return errors.New("Block header is nil")
 	}
 
+	seq := block.Header.Number
 	logger.Infof("[%s] Received block [%d] from buffer", c.ChainID, block.Header.Number)
 
 	logger.Debugf("[%s] Validating block [%d]", c.ChainID, block.Header.Number)
@@ -221,8 +222,12 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 
 	// commit block and private data
 	commitStart := time.Now()
+	startTotalCommit := time.Now()
 	err = c.CommitLegacy(blockAndPvtData, &ledger.CommitOptions{})
 	c.reportCommitDuration(time.Since(commitStart))
+
+	elapsedTotalCommit := time.Since(startTotalCommit) / time.Millisecond
+	logger.Infof("Commit Block %d  in %d ms\n", seq, elapsedTotalCommit)
 	if err != nil {
 		return errors.Wrap(err, "commit failed")
 	}

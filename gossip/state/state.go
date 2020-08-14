@@ -553,6 +553,7 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 			// Collect all subsequent payloads
 			for payload := s.payloads.Pop(); payload != nil; payload = s.payloads.Pop() {
 				rawBlock := &common.Block{}
+				startValidateBlock := time.Now()
 				if err := pb.Unmarshal(payload.Data, rawBlock); err != nil {
 					s.logger.Errorf("Error getting block with seqNum = %d due to (%+v)...dropping block", payload.SeqNum, errors.WithStack(err))
 					continue
@@ -573,6 +574,10 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 						continue
 					}
 				}
+				elapsedValidateBlock := time.Since(startValidateBlock) / time.Millisecond
+				s.logger.Infof("Validate Block %d %d ms\n", payload.SeqNum, elapsedValidateBlock)
+
+				startProcessBlock := time.Now()
 				if err := s.commitBlock(rawBlock, p); err != nil {
 					if executionErr, isExecutionErr := err.(*vsccErrors.VSCCExecutionFailureError); isExecutionErr {
 						s.logger.Errorf("Failed executing VSCC due to %v. Aborting chain processing", executionErr)
@@ -580,6 +585,12 @@ func (s *GossipStateProviderImpl) deliverPayloads() {
 					}
 					s.logger.Panicf("Cannot commit block to the ledger due to %+v", errors.WithStack(err))
 				}
+				elapsedProcessBlock := time.Since(startProcessBlock) / time.Millisecond
+				s.logger.Infof("Process Block %d %d ms\n", payload.SeqNum, elapsedProcessBlock)
+
+				milliTimestamp := time.Now().UnixNano() / 1000000
+				s.logger.Infof("Finish Block %d at unix mini timestamp %d\n", payload.SeqNum, milliTimestamp)
+
 			}
 		case <-s.stopCh:
 			s.logger.Debug("State provider has been stopped, finishing to push new blocks.")

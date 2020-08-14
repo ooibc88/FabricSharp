@@ -137,7 +137,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	var errPos int
 
 	startValidation := time.Now() // timer to log Validate block duration
-	logger.Debugf("[%s] START Block Validation for block [%d]", v.ChannelID, block.Header.Number)
+	logger.Debugf("[%s] START Txn Validation (v14) for block [%d]", v.ChannelID, block.Header.Number)
 
 	// Initialize trans as not_validated here, then set invalidation reason code upon invalidation below
 	txsfltr := txflags.New(len(block.Data.Data))
@@ -231,7 +231,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txsfltr
 
 	elapsedValidation := time.Since(startValidation) / time.Millisecond // duration in ms
-	logger.Infof("[%s] Validated block [%d] in %dms", v.ChannelID, block.Header.Number, elapsedValidation)
+	logger.Infof("[%s] Verify Txn in block [%d] in %dms", v.ChannelID, block.Header.Number, elapsedValidation)
 
 	return nil
 }

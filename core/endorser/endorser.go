@@ -26,6 +26,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"strings"
 )
 
 var endorserLogger = flogging.MustGetLogger("endorser")
@@ -107,8 +108,11 @@ func (e *Endorser) callChaincode(txParams *ccprovider.TransactionParams, input *
 	defer func(start time.Time) {
 		logger := endorserLogger.WithOptions(zap.AddCallerSkip(1))
 		logger = decorateLogger(logger, txParams)
-		elapsedMillisec := time.Since(start).Milliseconds()
-		logger.Infof("finished chaincode: %s duration: %dms", chaincodeName, elapsedMillisec)
+		elapsedMicrosec := time.Since(start).Round(time.Microsecond)	
+		if !strings.HasSuffix(chaincodeName, "scc") {
+			logger.Infof("[%s] [%s] Exit chaincode: %s (%d us)", txParams.ChannelID, shorttxid(txParams.TxID),  elapsedMicrosec)
+		}
+		// logger.Infof("finished chaincode: %s duration: %dms", chaincodeName, elapsedMicrosec)
 	}(time.Now())
 
 	meterLabels := []string{
@@ -296,6 +300,8 @@ func (e *Endorser) preProcess(up *UnpackedProposal, channel *Channel) error {
 func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedProposal) (*pb.ProposalResponse, error) {
 	// start time for computing elapsed time metric for successfully endorsed proposals
 	startTime := time.Now()
+	startProcessProposal := time.Now()
+
 	e.Metrics.ProposalsReceived.Add(1)
 
 	addr := util.ExtractRemoteAddress(ctx)
@@ -323,7 +329,15 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 	}
 
 	// 0 -- check and validate
+	startPreProcess := time.Now()
 	err = e.preProcess(up, channel)
+	elapsedPreProcess := time.Since(startPreProcess) / time.Microsecond
+	var normalCC = !strings.HasSuffix(up.ChaincodeName, "scc")
+	if normalCC {
+		endorserLogger.Infof("Preprocess txn [%s] in [%d] us", shorttxid(up.TxID()), elapsedPreProcess)
+	}
+ 
+
 	if err != nil {
 		return &pb.ProposalResponse{Response: &pb.Response{Status: 500, Message: err.Error()}}, err
 	}
@@ -350,6 +364,10 @@ func (e *Endorser) ProcessProposal(ctx context.Context, signedProp *pb.SignedPro
 
 		// total failed proposals = ProposalsReceived-SuccessfulProposals
 		e.Metrics.SuccessfulProposals.Add(1)
+	}
+	elapsedProcessProposal := time.Since(startProcessProposal) / time.Microsecond
+	if normalCC {
+		endorserLogger.Infof("E2E Txn [%s] Processing latency %d us with ccname %s", shorttxid(up.TxID()), elapsedProcessProposal, up.ChaincodeName)
 	}
 	return pResp, nil
 }
@@ -394,7 +412,12 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 	}
 
 	// 1 -- simulate
+	startSimulate := time.Now()
 	res, simulationResult, ccevent, err := e.SimulateProposal(txParams, up.ChaincodeName, up.Input)
+	elapsedSimulate := time.Since(startSimulate) / time.Microsecond
+	if !strings.HasSuffix(up.ChaincodeName, "scc") {
+		endorserLogger.Infof("Simulate txn [%s] in %d us", shorttxid(up.TxID()), elapsedSimulate)
+	}
 	if err != nil {
 		return nil, errors.WithMessage(err, "error in simulation")
 	}
@@ -446,7 +469,13 @@ func (e *Endorser) ProcessProposalSuccessfullyOrError(up *UnpackedProposal) (*pb
 	logger.Debugf("escc for chaincode %s is %s", up.ChaincodeName, escc)
 
 	// Note, mPrpBytes is the same as prpBytes by default endorsement plugin, but others could change it.
+	startEndorse := time.Now()
 	endorsement, mPrpBytes, err := e.Support.EndorseWithPlugin(escc, up.ChannelID(), prpBytes, up.SignedProposal)
+		elapsedEndorse := time.Since(startEndorse) / time.Microsecond
+	if !strings.HasSuffix(up.ChaincodeName, "scc") {
+		endorserLogger.Infof("Endorse txn [%s] in %d us", shorttxid(up.TxID()), elapsedEndorse)
+	}
+
 	if err != nil {
 		meterLabels = append(meterLabels, "chaincodeerror", strconv.FormatBool(false))
 		e.Metrics.EndorsementsFailed.With(meterLabels...).Add(1)

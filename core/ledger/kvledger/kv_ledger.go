@@ -510,14 +510,12 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 		}
 	}
 
-	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms)"+
-		" commitHash=[%x]",
+	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation: %d ms block_and_pvtdata_commit: %d ms state_commit: %d ms)",
 		l.ledgerID, block.Header.Number, len(block.Data.Data),
 		time.Since(startBlockProcessing)/time.Millisecond,
 		elapsedBlockProcessing/time.Millisecond,
 		elapsedBlockstorageAndPvtdataCommit/time.Millisecond,
 		elapsedCommitState/time.Millisecond,
-		l.commitHash,
 	)
 	l.updateBlockStats(
 		elapsedBlockProcessing,
