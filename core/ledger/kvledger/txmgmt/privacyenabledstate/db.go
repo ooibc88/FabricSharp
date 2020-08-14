@@ -13,6 +13,7 @@ import (
 	"github.com/hyperledger/fabric-lib-go/healthz"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/metrics"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
@@ -32,6 +33,9 @@ const (
 	pvtDataPrefix  = "p"
 	hashDataPrefix = "h"
 	couchDB        = "CouchDB"
+	ustoreDB       = "UstoreDB"
+	levelDB       = "goleveldb"
+
 )
 
 // StateDBConfig encapsulates the configuration for stateDB on the ledger.
@@ -64,14 +68,25 @@ func NewDBProvider(
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
 
-	if stateDBConf != nil && stateDBConf.StateDatabase == couchDB {
+	if stateDBConf != nil {
+		logger.Panic("DB Type not set. ")
+	} else if  stateDBConf.StateDatabase == couchDB {
+		if localconfig.MustGetCCType() != localconfig.Original || localconfig.LineageSupported() {
+			logger.Panic("CouchDB only allows for the original Concurrency Control and does not support the provenance management. ")
+		}
 		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider, sysNamespaces); err != nil {
 			return nil, err
 		}
-	} else {
+	// } else if  stateDBConf.StateDatabase == ustoreDB {
+	} else if  stateDBConf.StateDatabase == levelDB {
+		if localconfig.IsOCC() && localconfig.LineageSupported() {
+			logger.Panic("LevelDB prohibits the joint use of provenance management with the optimisitic concurrency control")
+		}
 		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath); err != nil {
 			return nil, err
 		}
+	} else {
+		logger.Panicf("Unrecognized DBType %s", stateDBConf.StateDatabase)
 	}
 
 	dbProvider := &DBProvider{vdbProvider, healthCheckRegistry, bookkeeperProvider}
