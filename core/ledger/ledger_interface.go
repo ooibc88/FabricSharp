@@ -191,6 +191,9 @@ type PeerLedger interface {
 
 // SimpleQueryExecutor encapsulates basic functions
 type SimpleQueryExecutor interface {
+	GetStateWithHeightChecked(namespace string, key string, height uint64) ([]byte, error)
+
+	GetStateAtHeight(namespace string, key string, height uint64) ([]byte, error)
 	// GetState gets the value for given namespace and key. For a chaincode, the namespace corresponds to the chaincodeId
 	GetState(namespace string, key string) ([]byte, error)
 	// GetStateRangeScanIterator returns an iterator that contains all the key-values between given key ranges.
@@ -236,6 +239,7 @@ type QueryExecutor interface {
 	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	ExecuteQueryWithPagination(namespace, query, bookmark string, pageSize int32) (QueryResultsIterator, error)
 	// GetPrivateData gets the value of a private data item identified by a tuple <namespace, collection, key>
+
 	GetPrivateData(namespace, collection, key string) ([]byte, error)
 	// GetPrivateDataMetadata gets the metadata of a private data item identified by a tuple <namespace, collection, key>
 	GetPrivateDataMetadata(namespace, collection, key string) (map[string][]byte, error)

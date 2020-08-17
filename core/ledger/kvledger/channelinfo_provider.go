@@ -148,6 +148,14 @@ func (sqe *simpleQueryExecutor) GetState(ns string, key string) ([]byte, error) 
 	return value, nil
 }
 
+func (sqe *simpleQueryExecutor) GetStateWithHeightChecked(namespace string, key string, height uint64) ([]byte, error) {
+	return sqe.GetState(namespace, key)
+}
+
+func (sqe *simpleQueryExecutor) GetStateAtHeight(namespace string, key string, height uint64) ([]byte, error) {
+	return sqe.GetState(namespace, key)
+}
+
 func (sqe *simpleQueryExecutor) GetStateRangeScanIterator(ns string, startKey string, endKey string) (commonledger.ResultsIterator, error) {
 	dbItr, err := sqe.VersionedDB.GetStateRangeScanIterator(ns, startKey, endKey)
 	if err != nil {

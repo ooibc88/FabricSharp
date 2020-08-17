@@ -27,6 +27,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/pkg/errors"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 )
 
 var logger = flogging.MustGetLogger("lockbasedtxmgr")
@@ -167,7 +168,10 @@ func (txmgr *LockBasedTxMgr) NewTxSimulator(txid string) (ledger.TxSimulator, er
 	if err != nil {
 		return nil, err
 	}
-	txmgr.commitRWLock.RLock()
+	if localconfig.MustGetCCType() == localconfig.Original {
+		txmgr.commitRWLock.RLock()
+	} 
+	// txmgr.commitRWLock.RLock()
 	return s, nil
 }
 

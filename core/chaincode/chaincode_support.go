@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package chaincode
 
 import (
+	"math"
 	"bytes"
 	"time"
 	"unicode/utf8"
@@ -146,13 +147,13 @@ func (cs *ChaincodeSupport) ExecuteLegacyInit(txParams *ccprovider.TransactionPa
 		return nil, nil, err
 	}
 
-	resp, err := cs.execute(pb.ChaincodeMessage_INIT, txParams, ccName, input, h)
+	resp, err := cs.execute(pb.ChaincodeMessage_INIT, txParams, ccName, input, h, math.MaxUint64)
 	return processChaincodeExecutionResult(txParams.TxID, ccName, resp, err)
 }
 
 // Execute invokes chaincode and returns the original response.
-func (cs *ChaincodeSupport) Execute(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (*pb.Response, *pb.ChaincodeEvent, error) {
-	resp, err := cs.Invoke(txParams, chaincodeName, input)
+func (cs *ChaincodeSupport) Execute(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput, height uint64) (*pb.Response, *pb.ChaincodeEvent, error) {
+	resp, err := cs.InvokeWithHeight(txParams, chaincodeName, input, height)
 	return processChaincodeExecutionResult(txParams.TxID, chaincodeName, resp, err)
 }
 
@@ -186,8 +187,6 @@ func processChaincodeExecutionResult(txid, ccName string, resp *pb.ChaincodeMess
 	}
 }
 
-// Invoke will invoke chaincode and return the message containing the response.
-// The chaincode will be launched if it is not already running.
 func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput) (*pb.ChaincodeMessage, error) {
 	ccid, cctype, err := cs.CheckInvocation(txParams, chaincodeName, input)
 	if err != nil {
@@ -199,7 +198,24 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, chain
 		return nil, err
 	}
 
-	return cs.execute(cctype, txParams, chaincodeName, input, h)
+	return cs.execute(cctype, txParams, chaincodeName, input, h, math.MaxUint64)
+}
+
+
+// Invoke will invoke chaincode and return the message containing the response.
+// The chaincode will be launched if it is not already running.
+func (cs *ChaincodeSupport) InvokeWithHeight(txParams *ccprovider.TransactionParams, chaincodeName string, input *pb.ChaincodeInput, height uint64) (*pb.ChaincodeMessage, error) {
+	ccid, cctype, err := cs.CheckInvocation(txParams, chaincodeName, input)
+	if err != nil {
+		return nil, errors.WithMessage(err, "invalid invocation")
+	}
+
+	h, err := cs.Launch(ccid)
+	if err != nil {
+		return nil, err
+	}
+
+	return cs.execute(cctype, txParams, chaincodeName, input, h, height)
 }
 
 // CheckInvocation inspects the parameters of an invocation and determines if, how, and to where a that invocation should be routed.
@@ -253,7 +269,7 @@ func (cs *ChaincodeSupport) CheckInvocation(txParams *ccprovider.TransactionPara
 }
 
 // execute executes a transaction and waits for it to complete until a timeout value.
-func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *ccprovider.TransactionParams, namespace string, input *pb.ChaincodeInput, h *Handler) (*pb.ChaincodeMessage, error) {
+func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *ccprovider.TransactionParams, namespace string, input *pb.ChaincodeInput, h *Handler, height uint64) (*pb.ChaincodeMessage, error) {
 	input.Decorations = txParams.ProposalDecorations
 
 	payload, err := proto.Marshal(input)
@@ -269,7 +285,7 @@ func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *cc
 	}
 
 	timeout := cs.executeTimeout(namespace, input)
-	ccresp, err := h.Execute(txParams, namespace, ccMsg, timeout)
+	ccresp, err := h.Execute(txParams, namespace, ccMsg, timeout, height)
 	if err != nil {
 		return nil, errors.WithMessage(err, "error sending")
 	}

@@ -249,6 +249,16 @@ func (fake *QueryExecutor) DoneCalls(stub func()) {
 	fake.DoneStub = stub
 }
 
+func (fake *QueryExecutor) GetStateWithHeightChecked(namespace string, key string, height uint64) ([]byte, error) {
+	return nil, nil
+}
+
+func (fake *QueryExecutor)  GetStateAtHeight(namespace string, key string, height uint64) ([]byte, error) {
+	return nil, nil
+}
+ 
+
+
 func (fake *QueryExecutor) ExecuteQuery(arg1 string, arg2 string) (ledgera.ResultsIterator, error) {
 	fake.executeQueryMutex.Lock()
 	ret, specificReturn := fake.executeQueryReturnsOnCall[len(fake.executeQueryArgsForCall)]

@@ -18,6 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statemetadata"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/pkg/errors"
 )
 
@@ -62,6 +63,49 @@ func newQueryExecutor(txmgr *LockBasedTxMgr,
 func (q *queryExecutor) GetState(ns, key string) ([]byte, error) {
 	val, _, err := q.getState(ns, key)
 	return val, err
+}
+
+func (q *queryExecutor) GetStateWithHeightChecked(ns, key string, height uint64) ([]byte, error) {
+	if err := q.checkDone(); err != nil {
+		return nil, err
+	}
+
+	versionedValue, err := q.txmgr.db.GetState(ns, key)
+	if err != nil {
+		return nil, err
+	}
+	val, _, ver := decomposeVersionedValue(versionedValue)
+
+	if ver != nil {
+		if ver.BlockNum >= height { err := fmt.Errorf("Reading block num %d and height %d", ver.BlockNum, height)
+			return nil, err
+		}
+	}
+
+	if q.collectReadset {
+		q.rwsetBuilder.AddToReadSet(ns, key, ver)
+	}
+	return val, nil
+}
+
+
+func (q *queryExecutor) GetStateAtHeight(ns, key string, height uint64) ([]byte, error) {
+	panic("Not implemented yet...")
+	return nil, nil
+	// if err := q.checkDone(); err != nil {
+	// 	return nil, err
+	// }
+
+	// versionedValue, err := q.txmgr.db.GetStateAtHeight(ns, key, height)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// val, _, ver := decomposeVersionedValue(versionedValue)
+
+	// if q.collectReadset {
+	// 	q.rwsetBuilder.AddToReadSet(ns, key, ver)
+	// }
+	// return val, nil
 }
 
 func (q *queryExecutor) getState(ns, key string) ([]byte, []byte, error) {
@@ -364,7 +408,9 @@ func (q *queryExecutor) Done() {
 	}
 
 	defer func() {
-		q.txmgr.commitRWLock.RUnlock()
+		if localconfig.MustGetCCType() == localconfig.Original {
+			q.txmgr.commitRWLock.RUnlock()
+		} 
 		q.doneInvoked = true
 		for _, itr := range q.itrs {
 			itr.Close()

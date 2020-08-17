@@ -26,6 +26,7 @@ import (
 	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/scc"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/pkg/errors"
 )
 
@@ -48,6 +49,7 @@ type Registry interface {
 // An Invoker invokes chaincode.
 type Invoker interface {
 	Invoke(txParams *ccprovider.TransactionParams, chaincodeName string, spec *pb.ChaincodeInput) (*pb.ChaincodeMessage, error)
+	InvokeWithHeight(txParams *ccprovider.TransactionParams, chaincodeName string, spec *pb.ChaincodeInput, height uint64) (*pb.ChaincodeMessage, error)
 }
 
 // TransactionRegistry tracks active transactions for each channel.
@@ -58,7 +60,7 @@ type TransactionRegistry interface {
 
 // A ContextRegistry is responsible for managing transaction contexts.
 type ContextRegistry interface {
-	Create(txParams *ccprovider.TransactionParams) (*TransactionContext, error)
+	Create(txParams *ccprovider.TransactionParams, height uint64) (*TransactionContext, error)
 	Get(channelID, txID string) *TransactionContext
 	Delete(channelID, txID string)
 	Close()
@@ -610,8 +612,13 @@ func (h *Handler) HandleGetState(msg *pb.ChaincodeMessage, txContext *Transactio
 		if err := errorIfCreatorHasNoReadPermission(namespaceID, collection, txContext); err != nil {
 			return nil, err
 		}
+		// So far NOT to consider for the private data. 
 		res, err = txContext.TXSimulator.GetPrivateData(namespaceID, collection, getState.Key)
-	} else {
+	} else if localconfig.MustGetCCType() == localconfig.Fpp{
+		res, err = txContext.TXSimulator.GetStateWithHeightChecked(namespaceID, getState.Key, txContext.Height)
+	} else if localconfig.IsOCC() { 
+		res, err = txContext.TXSimulator.GetStateAtHeight(namespaceID, getState.Key, txContext.Height)
+	} else if localconfig.MustGetCCType() == localconfig.Original {
 		res, err = txContext.TXSimulator.GetState(namespaceID, getState.Key)
 	}
 	if err != nil {
@@ -1135,9 +1142,9 @@ func (h *Handler) HandleInvokeChaincode(msg *pb.ChaincodeMessage, txContext *Tra
 		txParams.TXSimulator = sim
 		txParams.HistoryQueryExecutor = hqe
 	}
-
+	height := txContext.Height
 	// Execute the chaincode... this CANNOT be an init at least for now
-	responseMessage, err := h.Invoker.Invoke(txParams, targetInstance.ChaincodeName, chaincodeSpec.Input)
+	responseMessage, err := h.Invoker.InvokeWithHeight(txParams, targetInstance.ChaincodeName, chaincodeSpec.Input, height)
 	if err != nil {
 		return nil, errors.Wrap(err, "execute failed")
 	}
@@ -1152,7 +1159,7 @@ func (h *Handler) HandleInvokeChaincode(msg *pb.ChaincodeMessage, txContext *Tra
 	return &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid, ChannelId: msg.ChannelId}, nil
 }
 
-func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace string, msg *pb.ChaincodeMessage, timeout time.Duration) (*pb.ChaincodeMessage, error) {
+func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace string, msg *pb.ChaincodeMessage, timeout time.Duration, height uint64) (*pb.ChaincodeMessage, error) {
 	chaincodeLogger.Debugf("Entry")
 	defer chaincodeLogger.Debugf("Exit")
 
@@ -1160,7 +1167,7 @@ func (h *Handler) Execute(txParams *ccprovider.TransactionParams, namespace stri
 	txParams.IsInitTransaction = (msg.Type == pb.ChaincodeMessage_INIT)
 	txParams.NamespaceID = namespace
 
-	txctx, err := h.TXContexts.Create(txParams)
+	txctx, err := h.TXContexts.Create(txParams,height)
 	if err != nil {
 		return nil, err
 	}

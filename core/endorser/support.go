@@ -118,12 +118,14 @@ func (s *SupportImpl) ExecuteLegacyInit(txParams *ccprovider.TransactionParams, 
 // Execute a proposal and return the chaincode response
 func (s *SupportImpl) Execute(txParams *ccprovider.TransactionParams, name string, input *pb.ChaincodeInput) (*pb.Response, *pb.ChaincodeEvent, error) {
 	// decorate the chaincode input
+	height, _ := s.GetLedgerHeight(txParams.ChannelID)
+	fmt.Printf("Txn %s retrieves ledger height = %d for the chain %s at its start. \n", txParams.TxID, height, txParams.ChannelID)
 	decorators := library.InitRegistry(library.Config{}).Lookup(library.Decoration).([]decoration.Decorator)
 	input.Decorations = make(map[string][]byte)
 	input = decoration.Apply(txParams.Proposal, input, decorators...)
 	txParams.ProposalDecorations = input.Decorations
 
-	return s.ChaincodeSupport.Execute(txParams, name, input)
+	return s.ChaincodeSupport.Execute(txParams, name, input, height)
 }
 
 // ChaincodeEndorsementInfo returns info needed to endorse a tx for the chaincode with the supplied name.

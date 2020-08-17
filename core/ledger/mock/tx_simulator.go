@@ -2055,6 +2055,14 @@ func (fake *TxSimulator) SetStateMultipleKeysReturns(result1 error) {
 	}{result1}
 }
 
+func (fake *TxSimulator) GetStateWithHeightChecked(namespace string, key string, height uint64) ([]byte, error) {
+	return nil, nil
+}
+
+func (fake *TxSimulator) GetStateAtHeight(namespace string, key string, height uint64) ([]byte, error) {
+	return nil, nil
+}
+
 func (fake *TxSimulator) SetStateMultipleKeysReturnsOnCall(i int, result1 error) {
 	fake.setStateMultipleKeysMutex.Lock()
 	defer fake.setStateMultipleKeysMutex.Unlock()

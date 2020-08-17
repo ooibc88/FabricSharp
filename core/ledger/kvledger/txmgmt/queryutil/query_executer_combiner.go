@@ -51,6 +51,14 @@ func (c *QECombiner) GetState(namespace string, key string) ([]byte, error) {
 	return val, nil
 }
 
+func (c *QECombiner) GetStateWithHeightChecked(namespace string, key string, height uint64) ([]byte, error) {
+	return c.GetState(namespace, key)
+}
+
+func (c *QECombiner) GetStateAtHeight(namespace string, key string, height uint64) ([]byte, error) {
+	return c.GetState(namespace, key)
+}
+
 // GetStateRangeScanIterator implements function in the interface ledger.SimpleQueryExecutor
 func (c *QECombiner) GetStateRangeScanIterator(namespace string, startKey string, endKey string) (commonledger.ResultsIterator, error) {
 	var itrs []statedb.ResultsIterator
