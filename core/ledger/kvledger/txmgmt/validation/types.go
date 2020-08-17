@@ -83,6 +83,7 @@ func (u *publicAndHashUpdates) applyWriteSet(
 	txHeight *version.Height,
 	db *privacyenabledstate.DB,
 	containsPostOrderWrites bool,
+	txnId string,
 ) error {
 	u.publicUpdates.ContainsPostOrderWrites =
 		u.publicUpdates.ContainsPostOrderWrites || containsPostOrderWrites
@@ -91,13 +92,15 @@ func (u *publicAndHashUpdates) applyWriteSet(
 	if err != nil {
 		return err
 	}
+
 	for compositeKey, keyops := range txops {
 		if compositeKey.coll == "" {
 			ns, key := compositeKey.ns, compositeKey.key
+			// So far, the provenance only works on public states. 
 			if keyops.isDelete() {
-				u.publicUpdates.Delete(ns, key, txHeight)
+				u.publicUpdates.DeleteWithTxnIdDeps(ns, key, txHeight, txnId, keyops.deps)
 			} else {
-				u.publicUpdates.PutValAndMetadata(ns, key, keyops.value, keyops.metadata, txHeight)
+				u.publicUpdates.PutValAndMetadataTxnIdDeps(ns, key, keyops.value, keyops.metadata, txHeight, txnId, keyops.deps)
 			}
 		} else {
 			ns, coll, keyHash := compositeKey.ns, compositeKey.coll, []byte(compositeKey.key)

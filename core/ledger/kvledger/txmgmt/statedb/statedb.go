@@ -154,10 +154,15 @@ type QueryResult interface{}
 
 type nsUpdates struct {
 	M map[string]*VersionedValue
+	TxnIDs map[string]string
+	Deps map[string][]string
 }
 
 func newNsUpdates() *nsUpdates {
-	return &nsUpdates{make(map[string]*VersionedValue)}
+	return &nsUpdates{make(map[string]*VersionedValue), 
+	make(map[string]string), 
+	make(map[string][]string),
+   }
 }
 
 // UpdateBatch encloses the details of multiple `updates`
@@ -189,6 +194,10 @@ func (batch *UpdateBatch) Put(ns string, key string, value []byte, version *vers
 	batch.PutValAndMetadata(ns, key, value, nil, version)
 }
 
+func (batch *UpdateBatch) PutValTxnIdDep(ns string, key string, value []byte, version *version.Height, txnID string, deps []string) {
+	batch.PutValAndMetadataTxnIdDeps(ns, key, value, nil, version, txnID, deps)
+}
+
 // PutValAndMetadata adds a key with value and metadata
 // TODO introducing a new function to limit the refactoring. Later in a separate CR, the 'Put' function above should be removed
 func (batch *UpdateBatch) PutValAndMetadata(ns string, key string, value []byte, metadata []byte, version *version.Height) {
@@ -198,9 +207,21 @@ func (batch *UpdateBatch) PutValAndMetadata(ns string, key string, value []byte,
 	batch.Update(ns, key, &VersionedValue{value, metadata, version})
 }
 
+
+func (batch *UpdateBatch) PutValAndMetadataTxnIdDeps(ns string, key string, value []byte, metadata []byte, version *version.Height, txnID string, deps []string) {
+	if value == nil {
+		panic("Nil value not allowed. Instead call 'Delete' function")
+	}
+	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{value, metadata, version}, txnID, deps)
+}
+
 // Delete deletes a Key and associated value
 func (batch *UpdateBatch) Delete(ns string, key string, version *version.Height) {
-	batch.Update(ns, key, &VersionedValue{nil, nil, version})
+		   batch.Update(ns, key, &VersionedValue{nil, nil, version})
+}
+
+func (batch *UpdateBatch) DeleteWithTxnIdDeps(ns string, key string, version *version.Height, txnID string, deps []string) {
+	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{nil, nil, version}, txnID, deps)
 }
 
 // Exists checks whether the given key exists in the batch
@@ -229,6 +250,12 @@ func (batch *UpdateBatch) Update(ns string, key string, vv *VersionedValue) {
 	batch.getOrCreateNsUpdates(ns).M[key] = vv
 }
 
+func (batch *UpdateBatch) UpdateValTxnIdDeps(ns string, key string, vv *VersionedValue, txnID string, dep[]string) {
+	batch.getOrCreateNsUpdates(ns).M[key] = vv
+	batch.getOrCreateNsUpdates(ns).TxnIDs[key] = txnID
+	batch.getOrCreateNsUpdates(ns).Deps[key] = dep
+}
+
 // GetUpdates returns all the updates for a namespace
 func (batch *UpdateBatch) GetUpdates(ns string) map[string]*VersionedValue {
 	nsUpdates, ok := batch.Updates[ns]
@@ -236,6 +263,22 @@ func (batch *UpdateBatch) GetUpdates(ns string) map[string]*VersionedValue {
 		return nil
 	}
 	return nsUpdates.M
+}
+
+func (batch *UpdateBatch) GetTxnIds(ns string) map[string]string {
+	nsUpdates, ok := batch.Updates[ns]
+	if !ok {
+		return nil
+	}
+	return nsUpdates.TxnIDs
+}
+
+func (batch *UpdateBatch) GetDeps(ns string) map[string][]string {
+	nsUpdates, ok := batch.Updates[ns]
+	if !ok {
+		return nil
+	}
+	return nsUpdates.Deps
 }
 
 // GetRangeScanIterator returns an iterator that iterates over keys of a specific namespace in sorted order
@@ -254,7 +297,17 @@ func (batch *UpdateBatch) Merge(toMerge *UpdateBatch) {
 	batch.ContainsPostOrderWrites = batch.ContainsPostOrderWrites || toMerge.ContainsPostOrderWrites
 	for ns, nsUpdates := range toMerge.Updates {
 		for key, vv := range nsUpdates.M {
-			batch.Update(ns, key, vv)
+			// Each update must accompany its txnID
+			txnID := "fake" // this value can NOT be "" due to the ustore requirement
+			if t, ok := nsUpdates.TxnIDs[key]; ok {
+				txnID = t
+			}
+			var deps []string
+			if d, ok := nsUpdates.Deps[key]; ok {
+				deps = d
+			}
+
+			batch.UpdateValTxnIdDeps(ns, key, vv, txnID, deps)
 		}
 	}
 }

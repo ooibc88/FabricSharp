@@ -68,7 +68,7 @@ func NewDBProvider(
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
 
-	if stateDBConf != nil {
+	if stateDBConf == nil {
 		logger.Panic("DB Type not set. ")
 	} else if  stateDBConf.StateDatabase == couchDB {
 		if localconfig.MustGetCCType() != localconfig.Original || localconfig.LineageSupported() {

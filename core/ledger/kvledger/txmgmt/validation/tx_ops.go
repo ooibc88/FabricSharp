@@ -13,6 +13,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statemetadata"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
+	"strings"
 )
 
 func prepareTxOps(rwset *rwsetutil.TxRwSet, txht *version.Height,
@@ -58,9 +60,37 @@ func prepareTxOps(rwset *rwsetutil.TxRwSet, txht *version.Height,
 func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 	for _, nsRWSet := range rwset.NsRwSets {
 		ns := nsRWSet.NameSpace
-		for _, kvWrite := range nsRWSet.KvRwSet.Writes {
-			txops.applyKVWrite(ns, "", kvWrite)
+		if localconfig.LineageSupported() {
+			deps := map[string][]string{}
+			for _, kvWrite := range nsRWSet.KvRwSet.Writes {
+				if !strings.HasSuffix(kvWrite.Key, "_prov") {
+					continue
+				}
+				// record with key XX_prov captures the dependency of XX
+				key := strings.Split(kvWrite.Key, "_")[0] 
+				depKeys := strings.Split(string(kvWrite.Value), "_")
+				deps[key] = depKeys
+			}
+			logger.Infof("Preprocess Txn Deps: %v", deps)
+			for _, kvWrite := range nsRWSet.KvRwSet.Writes {
+				if strings.HasSuffix(kvWrite.Key, "_prov") {
+					continue
+				}
+				keyDeps := []string{}
+				if d, ok := deps[kvWrite.Key]; ok {
+					keyDeps = d
+				}
+				txops.applyKVWriteWithDep(ns, "", kvWrite, keyDeps)
+			}
+
+		} else {
+			for _, kvWrite := range nsRWSet.KvRwSet.Writes {
+				txops.applyKVWrite(ns, "", kvWrite)
+			}
+
 		}
+
+
 		for _, kvMetadataWrite := range nsRWSet.KvRwSet.MetadataWrites {
 			txops.applyMetadata(ns, "", kvMetadataWrite)
 		}
@@ -97,6 +127,14 @@ func (txops txOps) applyKVWrite(ns, coll string, kvWrite *kvrwset.KVWrite) {
 		txops.delete(compositeKey{ns, coll, kvWrite.Key})
 	} else {
 		txops.upsert(compositeKey{ns, coll, kvWrite.Key}, kvWrite.Value)
+	}
+}
+
+func (txops txOps) applyKVWriteWithDep(ns, coll string, kvWrite *kvrwset.KVWrite, deps []string) {
+	if kvWrite.IsDelete {
+		txops.deleteWithDep(compositeKey{ns, coll, kvWrite.Key}, deps)
+	} else {
+		txops.upsertWithDep(compositeKey{ns, coll, kvWrite.Key}, kvWrite.Value, deps)
 	}
 }
 
@@ -173,6 +211,7 @@ type keyOps struct {
 	flag     keyOpsFlag
 	value    []byte
 	metadata []byte
+	deps []string
 }
 
 ////////////////// txOps functions
@@ -186,6 +225,20 @@ func (txops txOps) upsert(k compositeKey, val []byte) {
 func (txops txOps) delete(k compositeKey) {
 	keyops := txops.getOrCreateKeyEntry(k)
 	keyops.flag += keyDelete
+}
+
+func (txops txOps) upsertWithDep(k compositeKey, val []byte, deps []string) {
+	keyops := txops.getOrCreateKeyEntry(k)
+	keyops.flag += upsertVal
+	keyops.value = val
+	keyops.deps = deps
+}
+
+func (txops txOps) deleteWithDep(k compositeKey, deps []string) {
+	keyops := txops.getOrCreateKeyEntry(k)
+	keyops.flag += keyDelete
+	keyops.deps = deps
+
 }
 
 func (txops txOps) metadataUpdate(k compositeKey, metadata []byte) {
