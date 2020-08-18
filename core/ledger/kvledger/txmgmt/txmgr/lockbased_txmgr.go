@@ -141,7 +141,10 @@ func (txmgr *LockBasedTxMgr) GetLastSavepoint() (*version.Height, error) {
 // NewQueryExecutor implements method in interface `txmgmt.TxMgr`
 func (txmgr *LockBasedTxMgr) NewQueryExecutor(txid string) (ledger.QueryExecutor, error) {
 	qe := newQueryExecutor(txmgr, txid, nil, true, txmgr.hashFunc)
-	txmgr.commitRWLock.RLock()
+	if localconfig.MustGetCCType() == localconfig.Original {
+		txmgr.commitRWLock.RLock()
+	} 
+	// txmgr.commitRWLock.RLock()
 	return qe, nil
 }
 
@@ -157,7 +160,10 @@ func (txmgr *LockBasedTxMgr) NewQueryExecutor(txid string) (ledger.QueryExecutor
 // However that needs a bigger refactoring of code.
 func (txmgr *LockBasedTxMgr) NewQueryExecutorNoCollChecks() (ledger.QueryExecutor, error) {
 	qe := newQueryExecutor(txmgr, "", nil, false, txmgr.hashFunc)
-	txmgr.commitRWLock.RLock()
+	if localconfig.MustGetCCType() == localconfig.Original {
+		txmgr.commitRWLock.RLock()
+	} 
+	// txmgr.commitRWLock.RLock()
 	return qe, nil
 }
 
