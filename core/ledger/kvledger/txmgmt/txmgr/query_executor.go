@@ -9,6 +9,8 @@ package txmgr
 import (
 	"fmt"
 
+	"strings"
+
 	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
@@ -65,6 +67,16 @@ func (q *queryExecutor) GetState(ns, key string) ([]byte, error) {
 	return val, err
 }
 
+func IsLineageQuery(key string) bool {
+	if localconfig.LineageSupported() {
+		return strings.HasSuffix(key, "_hist") ||
+			strings.HasSuffix(key, "_backward") ||
+			strings.HasSuffix(key, "_forward")
+	} else {
+		return false
+	}
+}
+
 func (q *queryExecutor) GetStateWithHeightChecked(ns, key string, height uint64) ([]byte, error) {
 	if err := q.checkDone(); err != nil {
 		return nil, err
@@ -77,35 +89,37 @@ func (q *queryExecutor) GetStateWithHeightChecked(ns, key string, height uint64)
 	val, _, ver := decomposeVersionedValue(versionedValue)
 
 	if ver != nil {
-		if ver.BlockNum >= height { err := fmt.Errorf("Reading block num %d and height %d", ver.BlockNum, height)
+		if ver.BlockNum >= height {
+			err := fmt.Errorf("Reading block num %d and height %d", ver.BlockNum, height)
 			return nil, err
 		}
 	}
 
-	if q.collectReadset {
+	if q.collectReadset && !IsLineageQuery(key) {
 		q.rwsetBuilder.AddToReadSet(ns, key, ver)
 	}
 	return val, nil
 }
 
-
 func (q *queryExecutor) GetStateAtHeight(ns, key string, height uint64) ([]byte, error) {
-	panic("Not implemented yet...")
-	return nil, nil
-	// if err := q.checkDone(); err != nil {
-	// 	return nil, err
-	// }
+	if err := q.checkDone(); err != nil {
+		return nil, err
+	}
 
-	// versionedValue, err := q.txmgr.db.GetStateAtHeight(ns, key, height)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// val, _, ver := decomposeVersionedValue(versionedValue)
+	// If the ledger has 'height' blks, the snapshot of the last blk num is height-1
+	snapshot := height - 1
+	versionedValue, err := q.txmgr.db.GetSnapshotState(snapshot, ns, key)
+	if err != nil {
+		return nil, err
+	}
+	val, _, _ := decomposeVersionedValue(versionedValue)
 
-	// if q.collectReadset {
-	// 	q.rwsetBuilder.AddToReadSet(ns, key, ver)
-	// }
-	// return val, nil
+	// the version is identical to the snapshot number
+	snapshotVersion := version.NewHeight(snapshot, 0)
+	if q.collectReadset && !IsLineageQuery(key) {
+		q.rwsetBuilder.AddToReadSet(ns, key, snapshotVersion)
+	}
+	return val, nil
 }
 
 func (q *queryExecutor) getState(ns, key string) ([]byte, []byte, error) {
@@ -117,7 +131,7 @@ func (q *queryExecutor) getState(ns, key string) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	val, metadata, ver := decomposeVersionedValue(versionedValue)
-	if q.collectReadset {
+	if q.collectReadset && !IsLineageQuery(key) {
 		q.rwsetBuilder.AddToReadSet(ns, key, ver)
 	}
 	return val, metadata, nil
@@ -410,7 +424,7 @@ func (q *queryExecutor) Done() {
 	defer func() {
 		if localconfig.MustGetCCType() == localconfig.Original {
 			q.txmgr.commitRWLock.RUnlock()
-		} 
+		}
 		q.doneInvoked = true
 		for _, itr := range q.itrs {
 			itr.Close()

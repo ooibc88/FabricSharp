@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package leveldbhelper
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -496,4 +497,101 @@ func createTestValues(dbname string, start int, end int) []string {
 		values = append(values, createTestValue(dbname, i))
 	}
 	return values
+}
+
+func iterateAllKeys(db *DBHandle) {
+	it := db.db.db.NewIterator(nil, nil)
+	it.Seek([]byte(""))
+	for it.Valid() {
+		fmt.Printf("Key [%s], Val [%s]\n", string(it.Key()), string(it.Value()))
+		it.Next()
+	}
+}
+func TestProv(t *testing.T) {
+	env := newTestProviderEnv(t, testDBPath)
+	defer env.cleanup()
+	p := env.provider
+	db := p.GetDBHandle("db")
+
+	batch1 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch1.Put("k1", []byte(("v12")), "t1", 2, []string{}, 1)
+	batch1.Put("k2", []byte(("v22")), "t2", 2, []string{}, 1)
+	batch1.Put("k3", []byte(("v32")), "t3", 2, []string{}, 1)
+	assert.NoError(t, db.WriteProvBatch(batch1, true), "")
+
+	batch2 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch2.Put("k2", []byte("v24"), "t4", 4, []string{"k1", "k3"}, 3)
+	assert.NoError(t, db.WriteProvBatch(batch2, true), "")
+
+	batch3 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch3.Put("k1", []byte("v16"), "t5", 6, []string{"k2", "k3"}, 5)
+	assert.NoError(t, db.WriteProvBatch(batch3, true), "")
+
+	batch4 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch4.Put("k3", []byte("v38"), "t6", 8, []string{"k1", "k3"}, 7)
+	assert.NoError(t, db.WriteProvBatch(batch4, true), "")
+
+	batch5 := NewProvUpdateBatch([]byte(""), []byte(""))
+	batch5.Put("k2", []byte("v38"), "t7", 10, []string{"k1", "k3"}, 7)
+	assert.NoError(t, db.WriteProvBatch(batch5, true), "")
+
+	iterateAllKeys(db)
+	var val string
+	var blkIndx uint64
+	var err error
+	val, blkIndx, err = db.HistQuery("k1", 999999)
+	assert.NoError(t, err)
+	assert.Equal(t, "v16", string(val))
+	assert.Equal(t, uint64(6), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k2", 4)
+	assert.NoError(t, err)
+	assert.Equal(t, "v24", string(val))
+	assert.Equal(t, uint64(4), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k2", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, "", string(val))
+	assert.Equal(t, uint64(0), blkIndx)
+
+	val, blkIndx, err = db.HistQuery("k3", 999999)
+	assert.NoError(t, err)
+	assert.Equal(t, "v38", string(val))
+	assert.Equal(t, uint64(8), blkIndx)
+
+	txnID, depKeys, depkIdx, err := db.Backward("k2", 4)
+	assert.NoError(t, err)
+	assert.Equal(t, "t4", txnID)
+	assert.Equal(t, []string{"k1", "k3"}, depKeys)
+	assert.Equal(t, []uint64{2, 2}, depkIdx)
+
+	txnID, depKeys, depkIdx, err = db.Backward("k1", 40)
+	assert.NoError(t, err)
+	assert.Equal(t, "t5", txnID)
+	assert.Equal(t, []string{"k2", "k3"}, depKeys)
+	assert.Equal(t, []uint64{4, 2}, depkIdx)
+
+	txnID, depKeys, depkIdx, err = db.Backward("k3", 40)
+	assert.NoError(t, err)
+	assert.Equal(t, "t6", txnID)
+	assert.Equal(t, []string{"k1", "k3"}, depKeys)
+	assert.Equal(t, []uint64{6, 2}, depkIdx)
+
+	txnID, depKeys, depkIdx, err = db.Backward("k2", 40)
+	assert.NoError(t, err)
+	assert.Equal(t, "t7", txnID)
+	assert.Equal(t, []string{"k1", "k3"}, depKeys)
+	assert.Equal(t, []uint64{6, 2}, depkIdx)
+
+	txnIDs, antiDepKeys, antiBlkIdxs, err := db.Forward("k2", 5)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"t5"}, txnIDs)
+	assert.Equal(t, []string{"k1"}, antiDepKeys)
+	assert.Equal(t, []uint64{6}, antiBlkIdxs)
+
+	txnIDs, antiDepKeys, antiBlkIdxs, err = db.Forward("k3", 2)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"t4", "t5", "t6", "t7"}, txnIDs)
+	assert.Equal(t, []string{"k2", "k1", "k3", "k2"}, antiDepKeys)
+	assert.Equal(t, []uint64{4, 6, 8, 10}, antiBlkIdxs)
 }

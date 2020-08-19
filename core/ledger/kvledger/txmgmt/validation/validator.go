@@ -7,12 +7,15 @@ SPDX-License-Identifier: Apache-2.0
 package validation
 
 import (
+	"fmt"
+
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 )
 
 // validator validates a tx against the latest committed state
@@ -179,15 +182,32 @@ func (v *validator) validateKVRead(ns string, kvRead *kvrwset.KVRead, updates *p
 	committedVersion, err := v.db.GetVersion(ns, kvRead.Key)
 	if err != nil {
 		return false, err
+		panic(fmt.Sprintf("Fail to get version for key %s", kvRead.Key))
 	}
 
-	logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
-		kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
-	if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
-		logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
-			ns, kvRead.Key, committedVersion, kvRead.Version)
-		return false, nil
+	if localconfig.MustGetCCType() == localconfig.FoccLatest {
+		if committedVersion == nil {
+			// Any read record is tagged with a version equal to the txn snapshot.
+			// And so are the non-existent keys, whose committedVersion is nil.
+			return true, nil
+		} else {
+			readVersion := rwsetutil.NewVersion(kvRead.Version)
+			return committedVersion.BlockNum <= readVersion.BlockNum, nil
+		}
+	} else if localconfig.MustGetCCType() == localconfig.Original || localconfig.MustGetCCType() == localconfig.Fpp {
+		logger.Debugf("Comparing versions for key [%s]: committed version=%#v and read version=%#v",
+			kvRead.Key, committedVersion, rwsetutil.NewVersion(kvRead.Version))
+		if !version.AreSame(committedVersion, rwsetutil.NewVersion(kvRead.Version)) {
+			logger.Debugf("Version mismatch for key [%s:%s]. Committed version = [%#v], Version in readSet [%#v]",
+				ns, kvRead.Key, committedVersion, kvRead.Version)
+			return false, nil
+		}
+
+	} else {
+		panic("CC Type other than Fpp or Original shall not validate any key version. ")
+		return true, nil
 	}
+
 	return true, nil
 }
 

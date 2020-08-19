@@ -254,7 +254,7 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 			},
 		}
 
-		d.Logger.Infof("[%s] Adding payload to local buffer, blockNum = [%d] at timestamp %d", blockNum, milliTimestamp)
+		d.Logger.Infof("Adding payload to local buffer, blockNum = [%d] at timestamp %d", blockNum, milliTimestamp)
 		// Add payload to local state payloads buffer
 		if err := d.Gossip.AddPayload(d.ChannelID, payload); err != nil {
 			d.Logger.Warningf("Block [%d] received from ordering service wasn't added to payload buffer: %v", blockNum, err)

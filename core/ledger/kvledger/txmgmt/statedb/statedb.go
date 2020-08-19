@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package statedb
 
 import (
+	"math"
 	"sort"
 
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
@@ -27,6 +28,7 @@ type VersionedDBProvider interface {
 
 // VersionedDB lists methods that a db is supposed to implement
 type VersionedDB interface {
+	GetSnapshotState(snapshot uint64, ns string, key string) (*VersionedValue, error)
 	// GetState gets the value for given namespace and key. For a chaincode, the namespace corresponds to the chaincodeId
 	GetState(namespace string, key string) (*VersionedValue, error)
 	// GetVersion gets the version for given namespace and key. For a chaincode, the namespace corresponds to the chaincodeId
@@ -153,16 +155,18 @@ type QueryResultsIterator interface {
 type QueryResult interface{}
 
 type nsUpdates struct {
-	M map[string]*VersionedValue
-	TxnIDs map[string]string
-	Deps map[string][]string
+	M            map[string]*VersionedValue
+	TxnIDs       map[string]string
+	Deps         map[string][]string
+	DepSnapshots map[string]uint64
 }
 
 func newNsUpdates() *nsUpdates {
-	return &nsUpdates{make(map[string]*VersionedValue), 
-	make(map[string]string), 
-	make(map[string][]string),
-   }
+	return &nsUpdates{make(map[string]*VersionedValue),
+		make(map[string]string),
+		make(map[string][]string),
+		make(map[string]uint64),
+	}
 }
 
 // UpdateBatch encloses the details of multiple `updates`
@@ -194,8 +198,8 @@ func (batch *UpdateBatch) Put(ns string, key string, value []byte, version *vers
 	batch.PutValAndMetadata(ns, key, value, nil, version)
 }
 
-func (batch *UpdateBatch) PutValTxnIdDep(ns string, key string, value []byte, version *version.Height, txnID string, deps []string) {
-	batch.PutValAndMetadataTxnIdDeps(ns, key, value, nil, version, txnID, deps)
+func (batch *UpdateBatch) PutValTxnIdDep(ns string, key string, value []byte, version *version.Height, txnID string, deps []string, depSnapshot uint64) {
+	batch.PutValAndMetadataTxnIdDeps(ns, key, value, nil, version, txnID, deps, depSnapshot)
 }
 
 // PutValAndMetadata adds a key with value and metadata
@@ -207,21 +211,20 @@ func (batch *UpdateBatch) PutValAndMetadata(ns string, key string, value []byte,
 	batch.Update(ns, key, &VersionedValue{value, metadata, version})
 }
 
-
-func (batch *UpdateBatch) PutValAndMetadataTxnIdDeps(ns string, key string, value []byte, metadata []byte, version *version.Height, txnID string, deps []string) {
+func (batch *UpdateBatch) PutValAndMetadataTxnIdDeps(ns string, key string, value []byte, metadata []byte, version *version.Height, txnID string, deps []string, depSnapshot uint64) {
 	if value == nil {
 		panic("Nil value not allowed. Instead call 'Delete' function")
 	}
-	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{value, metadata, version}, txnID, deps)
+	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{value, metadata, version}, txnID, deps, depSnapshot)
 }
 
 // Delete deletes a Key and associated value
 func (batch *UpdateBatch) Delete(ns string, key string, version *version.Height) {
-		   batch.Update(ns, key, &VersionedValue{nil, nil, version})
+	batch.Update(ns, key, &VersionedValue{nil, nil, version})
 }
 
-func (batch *UpdateBatch) DeleteWithTxnIdDeps(ns string, key string, version *version.Height, txnID string, deps []string) {
-	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{nil, nil, version}, txnID, deps)
+func (batch *UpdateBatch) DeleteWithTxnIdDeps(ns string, key string, version *version.Height, txnID string, deps []string, depSnapshot uint64) {
+	batch.UpdateValTxnIdDeps(ns, key, &VersionedValue{nil, nil, version}, txnID, deps, depSnapshot)
 }
 
 // Exists checks whether the given key exists in the batch
@@ -250,10 +253,11 @@ func (batch *UpdateBatch) Update(ns string, key string, vv *VersionedValue) {
 	batch.getOrCreateNsUpdates(ns).M[key] = vv
 }
 
-func (batch *UpdateBatch) UpdateValTxnIdDeps(ns string, key string, vv *VersionedValue, txnID string, dep[]string) {
+func (batch *UpdateBatch) UpdateValTxnIdDeps(ns string, key string, vv *VersionedValue, txnID string, dep []string, depSnapshot uint64) {
 	batch.getOrCreateNsUpdates(ns).M[key] = vv
 	batch.getOrCreateNsUpdates(ns).TxnIDs[key] = txnID
 	batch.getOrCreateNsUpdates(ns).Deps[key] = dep
+	batch.getOrCreateNsUpdates(ns).DepSnapshots[key] = depSnapshot
 }
 
 // GetUpdates returns all the updates for a namespace
@@ -279,6 +283,14 @@ func (batch *UpdateBatch) GetDeps(ns string) map[string][]string {
 		return nil
 	}
 	return nsUpdates.Deps
+}
+
+func (batch *UpdateBatch) GetDepSnapshots(ns string) map[string]uint64 {
+	nsUpdates, ok := batch.Updates[ns]
+	if !ok {
+		return nil
+	}
+	return nsUpdates.DepSnapshots
 }
 
 // GetRangeScanIterator returns an iterator that iterates over keys of a specific namespace in sorted order
@@ -307,7 +319,12 @@ func (batch *UpdateBatch) Merge(toMerge *UpdateBatch) {
 				deps = d
 			}
 
-			batch.UpdateValTxnIdDeps(ns, key, vv, txnID, deps)
+			var depSnapshot uint64 = math.MaxUint64
+			if d, ok := nsUpdates.DepSnapshots[key]; ok {
+				depSnapshot = d
+			}
+
+			batch.UpdateValTxnIdDeps(ns, key, vv, txnID, deps, depSnapshot)
 		}
 	}
 }

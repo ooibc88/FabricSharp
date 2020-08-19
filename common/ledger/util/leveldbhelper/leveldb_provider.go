@@ -8,7 +8,10 @@ package leveldbhelper
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/ledger/dataformat"
@@ -31,6 +34,28 @@ var (
 	lastKeyIndicator = byte(0x01)
 	formatVersionKey = []byte{'f'} // a single key in db whose value indicates the version of the data format
 )
+
+type Prov struct {
+	TxnID       string
+	Deps        []string
+	DepSnapshot uint64
+}
+
+type Forward struct {
+	TxnIds     []string
+	AntiDeps   []string
+	BlkHeights []uint64
+}
+
+func lpad(s string, pad string, plength int) string {
+	for i := len(s); i < plength; i++ {
+		s = pad + s
+	}
+	return s
+}
+
+// due to the restriction of lpad
+const MaxInt = 10000000 
 
 // closeFunc closes the db handle
 type closeFunc func()
@@ -164,6 +189,177 @@ func (h *DBHandle) Delete(key []byte, sync bool) error {
 	return h.db.Delete(constructLevelKey(h.dbName, key), sync)
 }
 
+func (h *DBHandle) HistQuery(key string, blkHeight uint64) (string, uint64, error) {
+	histKey := constructHistKey(h.dbName, key, blkHeight)
+	it := h.db.db.NewIterator(nil, h.db.readOpts)
+	var err error
+	committedBlkHeight := 0
+	// logger.Infof("Historical query for Key: %s", histKey)
+	if it.Seek(histKey); it.Valid() {
+		splits := strings.Split(string(it.Key()), "-")
+		
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "hist" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk index " + splits[3])
+			} else if uint64(committedBlkHeight) == blkHeight {
+				return string(it.Value()), blkHeight, nil
+			}
+		}
+	}
+	if it.Prev() {
+		splits := strings.Split(string(it.Key()), "-")
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "hist" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk index " + splits[3])
+			}
+			return string(it.Value()), uint64(committedBlkHeight), nil
+		}
+	}
+	return "", 0, nil // record not found
+}
+
+func (h *DBHandle) Backward(key string, blkHeight uint64) (string, []string, []uint64, error) {
+	provKey := constructProvKey(h.dbName, key, blkHeight)
+	it := h.db.db.NewIterator(nil, h.db.readOpts)
+	var err error
+	committedBlkHeight := 0
+	var provBytes []byte = nil
+
+	if it.Seek(provKey); it.Valid() {
+		splits := strings.Split(string(it.Key()), "-")
+
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "prov" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk index from " + splits[3])
+			} else if uint64(committedBlkHeight) == blkHeight {
+				provBytes = it.Value()
+			}
+		}
+	}
+	if provBytes == nil && it.Prev() {
+		splits := strings.Split(string(it.Key()), "-")
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "prov" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk idx from " + splits[3])
+			}
+			provBytes = it.Value()
+		}
+	}
+
+	if provBytes != nil {
+		provResult := Prov{}
+		if err := json.Unmarshal(it.Value(), &provResult); err != nil {
+			return "", nil, nil, errors.New("Fail to unmarshal provenance record for key " + string(provKey))
+		}
+
+		// find the committed blk height for dependent key
+		depBlkHeights := []uint64{}
+		for _, depKey := range provResult.Deps {
+			if val, depCommittedHeight, _ := h.HistQuery(depKey, uint64(provResult.DepSnapshot)); val == "" {
+				return "", nil, nil, errors.New("Fail to find the entry for the dependent key " + depKey + " before blk " + strconv.Itoa(int(provResult.DepSnapshot)))
+			} else {
+				depBlkHeights = append(depBlkHeights, depCommittedHeight)
+			}
+		}
+		return provResult.TxnID, provResult.Deps, depBlkHeights, nil
+
+	}
+
+	return "", nil, nil, nil // record not found
+}
+
+func (h *DBHandle) Forward(key string, blkHeight uint64) ([]string, []string, []uint64, error) {
+	forwardKey := constructForwardKey(h.dbName, key, blkHeight)
+	it := h.db.db.NewIterator(nil, h.db.readOpts)
+	var err error
+	committedBlkHeight := 0
+	var forwardBytes []byte = nil
+
+	if it.Seek(forwardKey); it.Valid() {
+		splits := strings.Split(string(it.Key()), "-")
+
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "forward" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk index from " + splits[3])
+			} else if uint64(committedBlkHeight) == blkHeight {
+				forwardBytes = it.Value()
+			}
+		}
+	}
+
+	if forwardBytes == nil && it.Prev() {
+		splits := strings.Split(string(it.Key()), "-")
+		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "forward" && splits[2] == key {
+			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
+				panic("Fail to parse blk idx from " + splits[3])
+			}
+			forwardBytes = it.Value()
+		}
+	}
+
+	if forwardBytes != nil {
+		forwardResult := Forward{}
+		if err := json.Unmarshal(it.Value(), &forwardResult); err != nil {
+			return nil, nil, nil, errors.New("Fail to unmarshal forward record for key " + string(forwardKey))
+		}
+
+		// find the committed blk height for dependent key
+		return forwardResult.TxnIds, forwardResult.AntiDeps, forwardResult.BlkHeights, nil
+	}
+	return nil, nil, nil, nil // record not found
+}
+
+func (h *DBHandle) WriteProvBatch(batch *ProvUpdateBatch, sync bool) error {
+	levelBatch := &leveldb.Batch{}
+	levelBatch.Put(batch.SavePointKey, batch.SavePoint)
+	for k, v := range batch.KVs {
+		blkHeight := batch.BlkHeight[k]
+		histKey := constructHistKey(h.dbName, k, blkHeight)
+		levelBatch.Put(histKey, v)
+
+		var prov Prov
+		prov.TxnID = batch.TxnIDs[k]
+		// ledgerLogger.Infof("Long Key1: %s, val: %s, txnID: %s", long_key1, string(value), prov.TxnID)
+		prov.Deps = make([]string, len(batch.KeyDeps[k]))
+		prov.DepSnapshot = batch.DepSnapshots[k]
+		copy(prov.Deps, batch.KeyDeps[k])
+		provBytes, err := json.Marshal(prov)
+		if err != nil {
+			panic("Fail to marshal provenance")
+		}
+		provKey := constructProvKey(h.dbName, k, blkHeight)
+		levelBatch.Put(provKey, provBytes)
+		for _, depKey := range batch.KeyDeps[k] {
+			if val, depCommittedHeight, _ := h.HistQuery(depKey, batch.DepSnapshots[k]); val == "" {
+				return errors.New("Fail to find the entry for the dependent key " + depKey + " before (inclusive) blk " + strconv.Itoa(int(batch.DepSnapshots[k])))
+			} else if forwardVal, err := h.db.Get([]byte(constructForwardKey(h.dbName, depKey, depCommittedHeight))); err != nil {
+				return errors.New("Fail to find the forward entry for the key " + depKey + " at blk " + strconv.Itoa(int(depCommittedHeight)))
+			} else {
+				forwardEntry := Forward{}
+				if err := json.Unmarshal(forwardVal, &forwardEntry); err != nil {
+					return errors.New("Fail to unmarshal the forward entry for the key " + depKey + " at blk " + strconv.Itoa(int(depCommittedHeight)))
+				}
+				forwardEntry.AntiDeps = append(forwardEntry.AntiDeps, k)
+				forwardEntry.TxnIds = append(forwardEntry.TxnIds, batch.TxnIDs[k])
+				forwardEntry.BlkHeights = append(forwardEntry.BlkHeights, batch.BlkHeight[k])
+				if newForwardBytes, err := json.Marshal(forwardEntry); err != nil {
+					return errors.New("Fail to marshal forward entry for the key " + depKey + " at blk " + strconv.Itoa(int(depCommittedHeight)))
+				} else {
+					levelBatch.Put([]byte(constructForwardKey(h.dbName, depKey, depCommittedHeight)), newForwardBytes)
+				}
+			}
+		}
+
+		forwardKey := constructForwardKey(h.dbName, k, blkHeight)
+		forwardBytes, _ := json.Marshal(Forward{}) // empty
+		levelBatch.Put(forwardKey, forwardBytes)
+	}
+	if err := h.db.WriteBatch(levelBatch, sync); err != nil {
+		return err
+	}
+	return nil
+}
+
 // DeleteAll deletes all the keys that belong to the channel (dbName).
 func (h *DBHandle) DeleteAll() error {
 	iter, err := h.GetIterator(nil, nil)
@@ -278,6 +474,38 @@ func (batch *UpdateBatch) Len() int {
 	return len(batch.KVs)
 }
 
+type ProvUpdateBatch struct {
+	SavePointKey []byte
+	SavePoint    []byte
+	KVs          map[string][]byte
+	TxnIDs       map[string]string
+	BlkHeight    map[string]uint64
+	KeyDeps      map[string][]string
+	DepSnapshots map[string]uint64
+}
+
+// NewUpdateBatch constructs an instance of a Batch
+func NewProvUpdateBatch(savePointKey, savePoint []byte) *ProvUpdateBatch {
+	return &ProvUpdateBatch{
+		SavePointKey: savePointKey,
+		SavePoint:    savePoint,
+		KVs:          make(map[string][]byte),
+		TxnIDs:       make(map[string]string),
+		BlkHeight:    make(map[string]uint64),
+		KeyDeps:      make(map[string][]string),
+		DepSnapshots: make(map[string]uint64),
+	}
+}
+
+// Put adds a KV
+func (batch *ProvUpdateBatch) Put(key string, value []byte, txnID string, blkHeight uint64, deps []string, depSnapshot uint64) {
+	batch.KVs[key] = value
+	batch.TxnIDs[key] = txnID
+	batch.BlkHeight[key] = blkHeight
+	batch.KeyDeps[key] = deps
+	batch.DepSnapshots[key] = depSnapshot
+}
+
 // Iterator extends actual leveldb iterator
 type Iterator struct {
 	dbName string
@@ -299,6 +527,24 @@ func (itr *Iterator) Seek(key []byte) bool {
 
 func constructLevelKey(dbName string, key []byte) []byte {
 	return append(append([]byte(dbName), dbNameKeySep...), key...)
+}
+
+func constructHistKey(dbName, key string, blkHeight uint64) []byte {
+	padBlkIdx := lpad(strconv.Itoa(int(blkHeight)), "0", 9)
+	longKey := dbName + "-hist-" + key + "-" + padBlkIdx
+	return []byte(longKey)
+}
+
+func constructProvKey(dbName, key string, blkHeight uint64) []byte {
+	padBlkIdx := lpad(strconv.Itoa(int(blkHeight)), "0", 9)
+	longKey := dbName + "-prov-" + key + "-" + padBlkIdx
+	return []byte(longKey)
+}
+
+func constructForwardKey(dbName, key string, blkHeight uint64) []byte {
+	padBlkIdx := lpad(strconv.Itoa(int(blkHeight)), "0", 9)
+	longKey := dbName + "-forward-" + key + "-" + padBlkIdx
+	return []byte(longKey)
 }
 
 func retrieveAppKey(levelKey []byte) []byte {

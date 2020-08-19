@@ -395,6 +395,10 @@ func (vdb *VersionedDB) BytesKeySupported() bool {
 	return false
 }
 
+func (vdb *VersionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	panic("CouchDB does not support querying on a snapshot. ")
+}
+
 // GetState implements method in VersionedDB interface
 func (vdb *VersionedDB) GetState(namespace string, key string) (*statedb.VersionedValue, error) {
 	logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)

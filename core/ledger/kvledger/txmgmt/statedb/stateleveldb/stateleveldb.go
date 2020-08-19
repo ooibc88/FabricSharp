@@ -8,12 +8,20 @@ package stateleveldb
 
 import (
 	"bytes"
+	"encoding/json"
+	"log"
+	"math"
+
+	"strings"
+
+	"strconv"
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/dataformat"
 	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 )
@@ -90,29 +98,175 @@ func (vdb *versionedDB) BytesKeySupported() bool {
 	return true
 }
 
+// func (vdb *versionedDB) RetrieveLatestSnapshot() uint64 {
+// 	panic("Not implemented...")
+// return vdb.db.RetrieveLatestSnapshot()
+// }
+
+// func (vdb *versionedDB) ReleaseSnapshot(snapshot uint64) bool {
+// 	panic("Not implemented...")
+// 	// return vdb.db.ReleaseSnapshot(snapshot)
+// }
+
+// These three structs must have the identical structure with those
+//   in https://github.com/RUAN0007/fabric-chaincode-go/blob/master/shim/interfaces.go
+type HistResult struct {
+	Msg        string
+	Val        string
+	CreatedBlk uint64
+}
+
+type BackwardResult struct {
+	Msg       string
+	DepKeys   []string
+	DepBlkIdx []uint64
+	TxnID     string
+}
+
+type ForwardResult struct {
+	Msg           string
+	ForwardKeys   []string
+	ForwardBlkIdx []uint64
+	ForwardTxnIDs []string
+}
+
+func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+
+	zeroVer := version.NewHeight(0, 0)
+	if localconfig.LineageSupported() && strings.HasSuffix(key, "_hist") {
+		splits := strings.Split(key, "_")
+		originalKey := splits[0]
+		queriedBlkIdx, err := strconv.Atoi(splits[1])
+		if err != nil {
+			return nil, errors.New("Fail to parse block index from Hist Query " + key)
+		}
+
+		var histResult HistResult
+		compositeKey := string(encodeDataKey(namespace, originalKey))
+
+		if val, blkIdx, err := vdb.db.HistQuery(compositeKey, uint64(queriedBlkIdx)); err != nil {
+			histResult.Msg = err.Error()
+		} else {
+			histResult.CreatedBlk = blkIdx
+			if rawVal, err := decodeValue([]byte(val)); err != nil {
+				log.Panicf("Fail to decode value for ns %s key %s at blk %d", namespace, key, blkIdx)
+			} else {
+				histResult.Val = string(rawVal.Value)
+			}
+			histResult.Msg = ""
+		}
+
+		logger.Infof("stateleveldb.Histquery(%s, %d) = (%s, %d, %d)", compositeKey, queriedBlkIdx, histResult.Val, histResult.CreatedBlk, histResult.Msg)
+		if histJSON, err := json.Marshal(histResult); err != nil {
+			return nil, errors.New("Fail to marshal for HistResult")
+		} else {
+			return &statedb.VersionedValue{Version: zeroVer, Value: histJSON, Metadata: nil}, nil
+		}
+	} else if localconfig.LineageSupported() && strings.HasSuffix(key, "_backward") {
+		splits := strings.Split(key, "_")
+		originalKey := splits[0]
+		queriedBlkIdx, err := strconv.Atoi(splits[1])
+		if err != nil {
+			return nil, errors.New("Fail to parse block index from Backward Query " + key)
+		}
+
+		var backResult BackwardResult
+		compositeKey := string(encodeDataKey(namespace, originalKey))
+		if txnID, depKeys, depBlkHeights, err := vdb.db.Backward(compositeKey, uint64(queriedBlkIdx)); err != nil {
+			backResult.Msg = err.Error()
+		} else {
+			backResult.DepBlkIdx = depBlkHeights
+			for _, dk := range depKeys {
+				if ns, rawKey := decodeDataKey([]byte(dk)); ns != namespace {
+					logger.Panicf("Inconsistent decoded ns, expected %s, actual %s", namespace, ns)
+				} else {
+					backResult.DepKeys = append(backResult.DepKeys, rawKey)
+				}
+			}
+			backResult.TxnID = txnID
+			backResult.Msg = ""
+		}
+		logger.Infof("stateleveldb.Backward(%s, %d) = ([%v], [%v], %s, %s)", compositeKey, queriedBlkIdx, backResult.DepKeys, backResult.DepBlkIdx, backResult.TxnID, backResult.Msg)
+		if backJSON, err := json.Marshal(backResult); err != nil {
+			return nil, errors.New("Fail to marshal for backward query Result")
+		} else {
+			return &statedb.VersionedValue{Version: zeroVer, Value: backJSON, Metadata: nil}, nil
+		}
+	} else if localconfig.LineageSupported() && strings.HasSuffix(key, "_forward") {
+		splits := strings.Split(key, "_")
+		originalKey := splits[0]
+		queriedBlkIdx, err := strconv.Atoi(splits[1])
+		if err != nil {
+			return nil, errors.New("Fail to parse block index from Forward Query " + key)
+		}
+
+		var forwardResult ForwardResult
+		compositeKey := string(encodeDataKey(namespace, originalKey))
+		if txnIds, antiDepKeys, antiDepBlkHeights, err := vdb.db.Forward(compositeKey, uint64(queriedBlkIdx)); err != nil {
+			forwardResult.Msg = err.Error()
+		} else {
+			forwardResult.ForwardTxnIDs = txnIds
+
+			for _, fk := range antiDepKeys {
+				if ns, rawKey := decodeDataKey([]byte(fk)); ns != namespace {
+					logger.Panicf("Inconsistent decoded ns, expected %s, actual %s", namespace, ns)
+				} else {
+					forwardResult.ForwardKeys = append(forwardResult.ForwardKeys, rawKey)
+				}
+			}
+			forwardResult.ForwardBlkIdx = antiDepBlkHeights
+			forwardResult.Msg = ""
+		}
+		if forwardJSON, err := json.Marshal(forwardResult); err != nil {
+			return nil, errors.New("Fail to marshal for forward query Result")
+		} else {
+			return &statedb.VersionedValue{Version: zeroVer, Value: forwardJSON, Metadata: nil}, nil
+		}
+
+	} else {
+		compositeKey := string(encodeDataKey(namespace, key))
+
+		logger.Infof("stateleveldb.SnapshotGet(%s, %d)", compositeKey, snapshot)
+		if val, _, err := vdb.db.HistQuery(compositeKey, snapshot); err != nil {
+			return nil, err
+		} else if val == "" {
+			return nil, nil
+		} else {
+			return decodeValue([]byte(val))
+		}
+	}
+}
+
 // GetState implements method in VersionedDB interface
 func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.VersionedValue, error) {
-	logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)
-	dbVal, err := vdb.db.Get(encodeDataKey(namespace, key))
-	if err != nil {
-		return nil, err
-	}
-	if dbVal == nil {
-		return nil, nil
-	}
-	return decodeValue(dbVal)
+	// logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)
+	return vdb.GetSnapshotState(leveldbhelper.MaxInt, namespace, key)
+	// dbVal, err := vdb.db.Get(encodeDataKey(namespace, key))
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if dbVal == nil {
+	// 	return nil, nil
+	// }
+	// return decodeValue(dbVal)
 }
 
 // GetVersion implements method in VersionedDB interface
 func (vdb *versionedDB) GetVersion(namespace string, key string) (*version.Height, error) {
-	versionedValue, err := vdb.GetState(namespace, key)
-	if err != nil {
+	if localconfig.LineageSupported() && strings.HasSuffix(key, "_hist") {
+		logger.Panicf("Shall not attempt to retrieve version for %s with lineage supported", key)
+	} else if localconfig.LineageSupported() && strings.HasSuffix(key, "_backward") {
+		logger.Panicf("Shall not attempt to retrieve version for %s with lineage supported", key)
+	} else if localconfig.LineageSupported() && strings.HasSuffix(key, "_forward") {
+		logger.Panicf("Shall not attempt to retrieve version for %s with lineage supported", key)
+	} else if versionedValue, err := vdb.GetState(namespace, key); err != nil {
 		return nil, err
-	}
-	if versionedValue == nil {
+	} else if versionedValue == nil {
 		return nil, nil
+	} else {
+		return versionedValue.Version, nil
 	}
-	return versionedValue.Version, nil
+	return nil, nil
 }
 
 // GetStateMultipleKeys implements method in VersionedDB interface
@@ -162,23 +316,47 @@ func (vdb *versionedDB) ExecuteQueryWithPagination(namespace, query, bookmark st
 
 // ApplyUpdates implements method in VersionedDB interface
 func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
-	dbBatch := leveldbhelper.NewUpdateBatch()
+	dbBatch := leveldbhelper.NewProvUpdateBatch(savePointKey, height.ToBytes())
+
 	namespaces := batch.GetUpdatedNamespaces()
 	batchSize := 0
 	for _, ns := range namespaces {
 		updates := batch.GetUpdates(ns)
+		txnIds := batch.GetTxnIds(ns)
+		deps := batch.GetDeps(ns)
+		depSnapshots := batch.GetDepSnapshots(ns)
 		for k, vv := range updates {
-			dataKey := encodeDataKey(ns, k)
-			logger.Debugf("Channel [%s]: Applying key(string)=[%s] key(bytes)=[%#v]", vdb.dbName, string(dataKey), dataKey)
+			dataKey := string(encodeDataKey(ns, k))
+
+			txnId := "default" // can not be empty
+			if t, ok := txnIds[k]; ok {
+				txnId = t
+			}
+
+			keyDeps := []string{}
+			if d, ok := deps[k]; ok {
+				for _, dk := range d {
+					keyDeps = append(keyDeps, string(encodeDataKey(ns, dk)))
+				}
+			}
+			var depSnapshot uint64
+			if height.BlockNum > 0 {
+				depSnapshot = height.BlockNum - 1 // by default, simulate on the last block.
+			}
+			if s, ok := depSnapshots[k]; ok && s != math.MaxUint64 {
+				depSnapshot = s
+			}
+
+			logger.Infof("Channel [%s]: Applying key(string)=[%s] txnId=[%s] height=[%d] deps=[%v] depSnapshot=[%d] val=[%s]", vdb.dbName, string(dataKey), txnId, height.BlockNum, keyDeps, depSnapshot)
 
 			if vv.Value == nil {
-				dbBatch.Delete(dataKey)
+				dbBatch.Put(dataKey, []byte(""), txnId, height.BlockNum, keyDeps, depSnapshot)
 			} else {
 				encodedVal, err := encodeValue(vv)
 				if err != nil {
 					return err
 				}
-				dbBatch.Put(dataKey, encodedVal)
+				dbBatch.Put(dataKey, encodedVal, txnId, height.BlockNum, keyDeps, depSnapshot)
 				batchSize += len(dataKey) + len(encodedVal)
 			}
 		}
@@ -187,12 +365,12 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	// If a given height is nil, it denotes that we are committing pvt data of old blocks.
 	// In this case, we should not store a savepoint for recovery. The lastUpdatedOldBlockList
 	// in the pvtstore acts as a savepoint for pvt data.
-	if height != nil {
-		dbBatch.Put(savePointKey, height.ToBytes())
-	}
+	// if height != nil {
+	// 	dbBatch.Put(savePointKey, height.ToBytes())
+	// }
 	logger.Infof("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
 	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
-	if err := vdb.db.WriteBatch(dbBatch, true); err != nil {
+	if err := vdb.db.WriteProvBatch(dbBatch, true); err != nil {
 		return err
 	}
 	return nil

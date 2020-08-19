@@ -96,11 +96,11 @@ func (u *publicAndHashUpdates) applyWriteSet(
 	for compositeKey, keyops := range txops {
 		if compositeKey.coll == "" {
 			ns, key := compositeKey.ns, compositeKey.key
-			// So far, the provenance only works on public states. 
+			// So far, the provenance only works on public states.
 			if keyops.isDelete() {
-				u.publicUpdates.DeleteWithTxnIdDeps(ns, key, txHeight, txnId, keyops.deps)
+				u.publicUpdates.DeleteWithTxnIdDeps(ns, key, txHeight, txnId, keyops.deps, keyops.depSnapshot)
 			} else {
-				u.publicUpdates.PutValAndMetadataTxnIdDeps(ns, key, keyops.value, keyops.metadata, txHeight, txnId, keyops.deps)
+				u.publicUpdates.PutValAndMetadataTxnIdDeps(ns, key, keyops.value, keyops.metadata, txHeight, txnId, keyops.deps, keyops.depSnapshot)
 			}
 		} else {
 			ns, coll, keyHash := compositeKey.ns, compositeKey.coll, []byte(compositeKey.key)

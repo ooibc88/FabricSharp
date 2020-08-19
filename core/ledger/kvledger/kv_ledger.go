@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/peer"
@@ -471,7 +473,10 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 	}
 
 	logger.Debugf("[%s] Validating state for block [%d]", l.ledgerID, blockNo)
-	txstatsInfo, updateBatchBytes, err := l.txmgr.ValidateAndPrepare(pvtdataAndBlock, true)
+
+	needsMvcc := localconfig.MustGetCCType() == localconfig.FoccLatest || localconfig.MustGetCCType() == localconfig.Original || localconfig.MustGetCCType() == localconfig.Fpp
+
+	txstatsInfo, updateBatchBytes, err := l.txmgr.ValidateAndPrepare(pvtdataAndBlock, needsMvcc)
 	if err != nil {
 		return err
 	}
@@ -510,7 +515,7 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 		}
 	}
 
-	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation: %d ms block_and_pvtdata_commit: %d ms state_commit: %d ms)",
+	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %d ms (state_validation: %d ms block_and_pvtdata_commit: %d ms state_commit: %d ms)",
 		l.ledgerID, block.Header.Number, len(block.Data.Data),
 		time.Since(startBlockProcessing)/time.Millisecond,
 		elapsedBlockProcessing/time.Millisecond,
