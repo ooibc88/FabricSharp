@@ -48,3 +48,4 @@ We will soon merge the optimization in [1] to this master branch upon v1.4.2 and
 * [7] P. Ruan, D. Loghin, Q.-T. Ta, M Zhang, G. Chen, B. C. Ooi: [A Transactional Perspective on Execute-Order-Validate Blockchains](https://arxiv.org/pdf/2003.10064.pdf), ACM SIGMOD 2020.
 * [8] C. Yue.  Z. Xue, M. Zhang, G. Chen, B. C. Ooi, S. Wang, X. Xiao: [Analysis of Indexing Structures for Immutable Data](https://arxiv.org/pdf/2003.02090.pdf). ACM SIGMOD 2020.
 * [9] Q. Lin et al. ForkBase: Immutable, [Tamper-evident Storage Substrate for Branchable Applications](https://www.comp.nus.edu.sg/~ooibc/icde20forkbase.pdf). IEEE International Conference on Data Engineering, 2020
+* [10] P. Ruan, A. Dinh, Q. Lin, M. Zhang, G. Chen, B. C. Ooi: [Revealing Every Story of Data in Blockchain Systems](https://www.comp.nus.edu.sg/~ooibc/sigmodhighlight2020.pdf). ACM SIGMOD Highlight Award paper, 2020.
