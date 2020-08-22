@@ -71,7 +71,8 @@ ARCH=$(shell go env GOARCH)
 MARCH=$(shell go env GOOS)-$(shell go env GOARCH)
 
 # defined in common/metadata/metadata.go
-METADATA_VAR = Version=$(BASE_VERSION)
+# METADATA_VAR = Version=$(BASE_VERSION)
+METADATA_VAR = Version=sharp
 METADATA_VAR += CommitSHA=$(EXTRA_VERSION)
 METADATA_VAR += BaseDockerLabel=$(BASE_DOCKER_LABEL)
 METADATA_VAR += DockerNamespace=$(DOCKER_NS)
@@ -227,10 +228,10 @@ $(BUILD_DIR)/images/%/$(DUMMY):
 		--build-arg GO_VER=$(GO_VER) \
 		--build-arg ALPINE_VER=$(ALPINE_VER) \
 		$(BUILD_ARGS) \
-		-t $(DOCKER_NS)/fabric-$* ./$(BUILD_CONTEXT)
-	docker tag $(DOCKER_NS)/fabric-$* $(DOCKER_NS)/fabric-$*:$(BASE_VERSION)
-	docker tag $(DOCKER_NS)/fabric-$* $(DOCKER_NS)/fabric-$*:$(TWO_DIGIT_VERSION)
-	docker tag $(DOCKER_NS)/fabric-$* $(DOCKER_NS)/fabric-$*:$(DOCKER_TAG)
+		-t $(DOCKER_NS)/fabric-sharp-$* ./$(BUILD_CONTEXT)
+	docker tag $(DOCKER_NS)/fabric-sharp-$* $(DOCKER_NS)/fabric-sharp-$*:$(BASE_VERSION)
+	# docker tag $(DOCKER_NS)/fabric-$* $(DOCKER_NS)/fabric-$*:$(TWO_DIGIT_VERSION)
+	# docker tag $(DOCKER_NS)/fabric-$* $(DOCKER_NS)/fabric-$*:$(DOCKER_TAG)
 	@touch $@
 
 # builds release packages for the host platform

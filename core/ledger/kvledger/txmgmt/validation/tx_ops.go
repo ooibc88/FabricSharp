@@ -73,7 +73,11 @@ func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 				}
 				if localconfig.IsOCC() {
 					// Under OCC, the version of each read key is the snapshot
-					depSnapshot = kvRead.Version.BlockNum
+					if kvRead.Version == nil {
+						depSnapshot = math.MaxUint64
+					} else {
+						depSnapshot = kvRead.Version.BlockNum
+					}
 				}
 			}
 			// }
@@ -83,7 +87,7 @@ func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 				if !strings.HasSuffix(kvWrite.Key, "_prov") {
 					continue
 				}
-				// record with key XX_prov captures the dependency of XX, in the format of YY_ZZ_. 
+				// record with key XX_prov captures the dependency of XX, in the format of YY_ZZ_.
 				// Need to ignore the whitespace after splitting with "_"
 				key := strings.Split(kvWrite.Key, "_")[0]
 				depKeys := []string{}

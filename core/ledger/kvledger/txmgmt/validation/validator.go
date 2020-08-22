@@ -94,6 +94,7 @@ func (v *validator) validateAndPrepareBatch(blk *block, doMVCCValidation bool) (
 	}
 
 	updates := newPubAndHashUpdates()
+	inValidCount := 0
 	for _, tx := range blk.txs {
 		txnId := tx.id
 		var validationCode peer.TxValidationCode
@@ -108,10 +109,12 @@ func (v *validator) validateAndPrepareBatch(blk *block, doMVCCValidation bool) (
 			committingTxHeight := version.NewHeight(blk.num, uint64(tx.indexInBlock))
 			updates.applyWriteSet(tx.rwset, committingTxHeight, v.db, tx.containsPostOrderWrites, txnId)
 		} else {
+			inValidCount++
 			logger.Warningf("Block [%d] Transaction index [%d] TxId [%s] marked as invalid by state validator. Reason code [%s]",
 				blk.num, tx.indexInBlock, tx.id, validationCode.String())
 		}
 	}
+	logger.Infof("# of conflicted txns: %d", inValidCount)
 	return updates, nil
 }
 

@@ -37,19 +37,16 @@ func IsOCC() bool {
 }
 
 func LineageSupported() bool {
-	if _, supported := os.LookupEnv("WithLineage"); supported {
-		return true
-	} else {
-		return false
-	}
+	return true
+	// if _, supported := os.LookupEnv("WithLineage"); supported {
+	// 	return true
+	// } else {
+	// 	return false
+	// }
 }
 
-// func NeedsMvcc() bool {
-// 	return MustGetCCType() == FoccLatest
-// }
-
-func MustGetStoragePath() string {
-	if storagePath, ok := os.LookupEnv("STORE_PATH"); ok {
+func MustGetMvStoragePath() string {
+	if storagePath, ok := os.LookupEnv("MV_STORE_PATH"); ok {
 		return storagePath
 	} else {
 		panic("STORE_PATH not set ")

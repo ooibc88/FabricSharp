@@ -14,6 +14,13 @@ import (
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/fifoscheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/fppscheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/occlatestscheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/occsharpscheduler"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter/scheduler/occstandardscheduler"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/orderer/common/msgprocessor"
 	"github.com/hyperledger/fabric/orderer/common/types"
 	"github.com/hyperledger/fabric/orderer/consensus"
@@ -59,6 +66,26 @@ func newChainSupport(
 		return nil, errors.Wrapf(err, "error extracting orderer metadata for channel: %s", ledgerResources.ConfigtxValidator().ChannelID())
 	}
 
+	var scheduler scheduler.Scheduler
+	if schedulerType := localconfig.MustGetCCType(); schedulerType == localconfig.FoccSharp {
+		scheduler = occsharpscheduler.NewTxnScheduler()
+	} else if schedulerType == localconfig.FoccStandard {
+		scheduler = occstandardscheduler.NewTxnScheduler()
+	} else if schedulerType == localconfig.FoccLatest {
+		scheduler = occlatestscheduler.NewTxnScheduler()
+	} else if schedulerType == localconfig.Fpp {
+		orderConfig, _ := ledgerResources.OrdererConfig()
+		blkSize := int(orderConfig.BatchSize().MaxMessageCount)
+		if b := localconfig.TryGetBlockSize(); 0 < b {
+			blkSize = b
+		}
+		scheduler = fppscheduler.NewTxnScheduler(uint32(blkSize))
+	} else if schedulerType == localconfig.Original {
+		scheduler = fifoscheduler.NewTxnScheduler()
+	} else {
+		panic("unrecognized scheduler type...")
+	}
+
 	// Construct limited support needed as a parameter for additional support
 	cs := &ChainSupport{
 		ledgerResources:  ledgerResources,
@@ -66,6 +93,7 @@ func newChainSupport(
 		cutter: blockcutter.NewReceiverImpl(
 			ledgerResources.ConfigtxValidator().ChannelID(),
 			ledgerResources,
+			scheduler,
 			blockcutterMetrics,
 		),
 		BCCSP: bccsp,
@@ -122,6 +150,7 @@ func newChainSupportForJoin(
 		return newChainSupport(registrar, ledgerResources, consenters, signer, blockcutterMetrics, bccsp)
 	}
 
+	scheduler := fifoscheduler.NewTxnScheduler()
 	// Construct limited support needed as a parameter for additional support
 	cs := &ChainSupport{
 		ledgerResources:  ledgerResources,
@@ -129,6 +158,7 @@ func newChainSupportForJoin(
 		cutter: blockcutter.NewReceiverImpl(
 			ledgerResources.ConfigtxValidator().ChannelID(),
 			ledgerResources,
+			scheduler,
 			blockcutterMetrics,
 		),
 		BCCSP: bccsp,

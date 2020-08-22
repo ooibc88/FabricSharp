@@ -13,7 +13,6 @@ import (
 	"github.com/hyperledger/fabric-lib-go/healthz"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/metrics"
-	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
@@ -23,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/pkg/errors"
 )
 
@@ -34,8 +34,7 @@ const (
 	hashDataPrefix = "h"
 	couchDB        = "CouchDB"
 	ustoreDB       = "UstoreDB"
-	levelDB       = "goleveldb"
-
+	levelDB        = "goleveldb"
 )
 
 // StateDBConfig encapsulates the configuration for stateDB on the ledger.
@@ -70,18 +69,15 @@ func NewDBProvider(
 
 	if stateDBConf == nil {
 		logger.Panic("DB Type not set. ")
-	} else if  stateDBConf.StateDatabase == couchDB {
+	} else if stateDBConf.StateDatabase == couchDB {
 		if localconfig.MustGetCCType() != localconfig.Original || localconfig.LineageSupported() {
 			logger.Panic("CouchDB only allows for the original Concurrency Control and does not support the provenance management. ")
 		}
 		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider, sysNamespaces); err != nil {
 			return nil, err
 		}
-	// } else if  stateDBConf.StateDatabase == ustoreDB {
-	} else if  stateDBConf.StateDatabase == levelDB {
-		if localconfig.IsOCC() && localconfig.LineageSupported() {
-			logger.Panic("LevelDB prohibits the joint use of provenance management with the optimisitic concurrency control")
-		}
+		// } else if  stateDBConf.StateDatabase == ustoreDB {
+	} else if stateDBConf.StateDatabase == levelDB {
 		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath); err != nil {
 			return nil, err
 		}
