@@ -187,6 +187,8 @@ type PeerLedger interface {
 	//     missing info is recorded in the ledger (or)
 	// (3) the block is committed and does not contain any pvtData.
 	DoesPvtDataInfoExist(blockNum uint64) (bool, error)
+
+	GetBlockHeight() uint64
 }
 
 // SimpleQueryExecutor encapsulates basic functions

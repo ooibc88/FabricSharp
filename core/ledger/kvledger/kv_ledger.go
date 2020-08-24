@@ -62,6 +62,7 @@ type kvLedger struct {
 	// reconciliation and may be updated during a regular block commit.
 	// Hence, we use atomic value to ensure consistent read.
 	isPvtstoreAheadOfBlkstore atomic.Value
+	currentBlkHeight          uint64
 }
 
 type lgrInitializer struct {
@@ -379,6 +380,10 @@ func (l *kvLedger) GetBlockchainInfo() (*common.BlockchainInfo, error) {
 	return bcInfo, err
 }
 
+func (l *kvLedger) GetBlockHeight() uint64 {
+	return l.currentBlkHeight
+}
+
 // GetBlockByNumber returns block at a given height
 // blockNumber of  math.MaxUint64 will return last block
 func (l *kvLedger) GetBlockByNumber(blockNumber uint64) (*common.Block, error) {
@@ -528,6 +533,13 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 		elapsedCommitState,
 		txstatsInfo,
 	)
+
+	if bcInfo, err := l.blockStore.GetBlockchainInfo(); err != nil {
+		logger.Panic("Fail to get the block info")
+	} else {
+		l.currentBlkHeight = bcInfo.Height
+	}
+
 	return nil
 }
 

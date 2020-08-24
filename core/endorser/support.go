@@ -95,13 +95,14 @@ func (s *SupportImpl) GetLedgerHeight(channelID string) (uint64, error) {
 	if lgr == nil {
 		return 0, errors.Errorf("failed to look up the ledger for Channel %s", channelID)
 	}
+	return lgr.GetBlockHeight(), nil
 
-	info, err := lgr.GetBlockchainInfo()
-	if err != nil {
-		return 0, errors.Wrap(err, fmt.Sprintf("failed to obtain information for Channel %s", channelID))
-	}
+	// info, err := lgr.GetBlockchainInfo()
+	// if err != nil {
+	// 	return 0, errors.Wrap(err, fmt.Sprintf("failed to obtain information for Channel %s", channelID))
+	// }
 
-	return info.Height, nil
+	// return info.Height, nil
 }
 
 // IsSysCC returns true if the name matches a system chaincode's
