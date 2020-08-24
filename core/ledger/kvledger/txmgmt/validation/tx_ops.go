@@ -67,9 +67,9 @@ func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 			var depSnapshot uint64 = math.MaxUint64
 			for _, kvRead := range nsRWSet.KvRwSet.Reads {
 				if kvRead.Version != nil {
-					logger.Infof("Ns: %s, Read Key: %s, Read Version Blk Num: %d", ns, kvRead.GetKey(), kvRead.Version.BlockNum)
+					logger.Debugf("Ns: %s, Read Key: %s, Read Version Blk Num: %d", ns, kvRead.GetKey(), kvRead.Version.BlockNum)
 				} else {
-					logger.Infof("Ns: %s, Read Key: %s, Read Version Blk Num: nil", ns, kvRead.GetKey())
+					logger.Debugf("Ns: %s, Read Key: %s, Read Version Blk Num: nil", ns, kvRead.GetKey())
 				}
 				if localconfig.IsOCC() {
 					// Under OCC, the version of each read key is the snapshot
@@ -98,7 +98,7 @@ func (txops txOps) applyTxRwset(rwset *rwsetutil.TxRwSet) error {
 				}
 				deps[key] = depKeys
 			}
-			logger.Infof("Preprocess Txn Deps: [%v], length: %d", deps, len(deps))
+			logger.Debugf("Preprocess Txn Deps: [%v], length: %d", deps, len(deps))
 			for _, kvWrite := range nsRWSet.KvRwSet.Writes {
 				if strings.HasSuffix(kvWrite.Key, "_prov") {
 					continue

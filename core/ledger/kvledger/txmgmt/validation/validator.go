@@ -114,7 +114,8 @@ func (v *validator) validateAndPrepareBatch(blk *block, doMVCCValidation bool) (
 				blk.num, tx.indexInBlock, tx.id, validationCode.String())
 		}
 	}
-	logger.Infof("# of conflicted txns: %d", inValidCount)
+	logger.Infof("Block %d has %d invalid endorsed txns...", blk.num, inValidCount)
+
 	return updates, nil
 }
 

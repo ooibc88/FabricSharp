@@ -90,7 +90,7 @@ func (q *queryExecutor) GetStateWithHeightChecked(ns, key string, height uint64)
 
 	if ver != nil {
 		if ver.BlockNum >= height {
-			err := fmt.Errorf("Reading block num %d and height %d", ver.BlockNum, height)
+			err := fmt.Errorf("Inconsistent Reading block num %d and height %d", ver.BlockNum, height)
 			return nil, err
 		}
 	}

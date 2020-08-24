@@ -156,7 +156,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 			histResult.Msg = ""
 		}
 
-		logger.Infof("stateleveldb.Histquery(%s, %d) = (%s, %d, %d)", compositeKey, queriedBlkIdx, histResult.Val, histResult.CreatedBlk, histResult.Msg)
+		logger.Debugf("stateleveldb.Histquery(%s, %d) = (%s, %d, %d)", compositeKey, queriedBlkIdx, histResult.Val, histResult.CreatedBlk, histResult.Msg)
 		if histJSON, err := json.Marshal(histResult); err != nil {
 			return nil, errors.New("Fail to marshal for HistResult")
 		} else {
@@ -186,7 +186,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 			backResult.TxnID = txnID
 			backResult.Msg = ""
 		}
-		logger.Infof("stateleveldb.Backward(%s, %d) = ([%v], [%v], %s, %s)", compositeKey, queriedBlkIdx, backResult.DepKeys, backResult.DepBlkIdx, backResult.TxnID, backResult.Msg)
+		logger.Debugf("stateleveldb.Backward(%s, %d) = ([%v], [%v], %s, %s)", compositeKey, queriedBlkIdx, backResult.DepKeys, backResult.DepBlkIdx, backResult.TxnID, backResult.Msg)
 		if backJSON, err := json.Marshal(backResult); err != nil {
 			return nil, errors.New("Fail to marshal for backward query Result")
 		} else {
@@ -226,7 +226,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 	} else {
 		compositeKey := string(encodeDataKey(namespace, key))
 
-		logger.Infof("stateleveldb.SnapshotGet(%s, %d)", compositeKey, snapshot)
+		logger.Debugf("stateleveldb.SnapshotGet(%s, %d)", compositeKey, snapshot)
 		if val, _, err := vdb.db.HistQuery(compositeKey, snapshot); err != nil {
 			return nil, err
 		} else if val == "" {
@@ -347,7 +347,7 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 				depSnapshot = s
 			}
 
-			logger.Infof("Channel [%s]: Applying key(string)=[%s] txnId=[%s] height=[%d] deps=[%v] depSnapshot=[%d] val=[%s]", vdb.dbName, string(dataKey), txnId, height.BlockNum, keyDeps, depSnapshot)
+			logger.Debugf("Channel [%s]: Applying key(string)=[%s] txnId=[%s] height=[%d] deps=[%v] depSnapshot=[%d] val=[%s]", vdb.dbName, string(dataKey), txnId, height.BlockNum, keyDeps, depSnapshot)
 
 			if vv.Value == nil {
 				dbBatch.Put(dataKey, []byte(""), txnId, height.BlockNum, keyDeps, depSnapshot)
@@ -368,7 +368,7 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	// if height != nil {
 	// 	dbBatch.Put(savePointKey, height.ToBytes())
 	// }
-	logger.Infof("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
+	logger.Debugf("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
 	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
 	if err := vdb.db.WriteProvBatch(dbBatch, true); err != nil {
 		return err

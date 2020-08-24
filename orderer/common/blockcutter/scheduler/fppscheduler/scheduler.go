@@ -66,7 +66,26 @@ func (scheduler *TxnScheduler) ScheduleTxn(resppayload *peer.ChaincodeAction, ne
 	}
 	tid := int32(len(scheduler.pendingTxns))
 
-	ns := txRWSet.NsRwSets[1]
+	ns := txRWSet.NsRwSets[0]
+	// For some reason, if we use the old nodejs API to deploy the chaincode,
+	//   the chaincode action is from the 0-th NsRwSets.
+	// If we use the latest bash cmd to deploy the chaincode,
+	//   the chaincode action is from the 1-th NsRwSets.
+	// ns := txRWSet.NsRwSets[1]
+
+	// for _, ns := range txRWSet.NsRwSets {
+	// 	for _, write := range ns.KvRwSet.Writes {
+	// 		logger.Infof("Txn: %s, Ns: %s Write Key: %s", txnID, ns, write.GetKey())
+	// 	}
+	// 	for _, read := range ns.KvRwSet.Reads {
+	// 		if read.GetVersion() == nil {
+	// 			logger.Infof("Txn: %s, Ns: %s Read Key: %s, Version: nil", txnID, ns, read.GetKey())
+	// 		} else {
+	// 			logger.Infof("Txn: %s, Ns: %s Read Key: %s, Version: (%d, %d)", txnID, ns, read.GetKey(), read.GetVersion().GetBlockNum(), read.GetVersion().GetTxNum())
+
+	// 		}
+	// 	}
+	// }
 
 	// generate key for each key in the read and write set and use it to insert the read/write key into RW matrices
 
@@ -224,7 +243,7 @@ func (scheduler *TxnScheduler) ProcessBlk(_ uint64) []string {
 		}
 	}
 	// log some information
-	// logger.Debugf("schedule-> %v", res)
+	// logger.Debugf("schedule len %d -> %v", len(res), res)
 	// logger.Infof("oldBlockSize:%d, newBlockSize:%d", len(r.pendingBatch), len(validBatch))
 	// logger.Infof("Finish processing blk ")
 	return validBatch
