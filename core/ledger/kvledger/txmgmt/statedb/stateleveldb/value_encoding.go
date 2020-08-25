@@ -12,7 +12,14 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 )
 
-// encodeValue encodes the value, version, and metadata
+func EncodeValue(v *statedb.VersionedValue) ([]byte, error) {
+	return encodeValue(v)
+}
+
+func DecodeValue(encodedValue []byte) (*statedb.VersionedValue, error) {
+	return decodeValue(encodedValue)
+}
+
 func encodeValue(v *statedb.VersionedValue) ([]byte, error) {
 	return proto.Marshal(
 		&DBValue{

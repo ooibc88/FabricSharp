@@ -108,28 +108,6 @@ func (vdb *versionedDB) BytesKeySupported() bool {
 // 	// return vdb.db.ReleaseSnapshot(snapshot)
 // }
 
-// These three structs must have the identical structure with those
-//   in https://github.com/RUAN0007/fabric-chaincode-go/blob/master/shim/interfaces.go
-type HistResult struct {
-	Msg        string
-	Val        string
-	CreatedBlk uint64
-}
-
-type BackwardResult struct {
-	Msg       string
-	DepKeys   []string
-	DepBlkIdx []uint64
-	TxnID     string
-}
-
-type ForwardResult struct {
-	Msg           string
-	ForwardKeys   []string
-	ForwardBlkIdx []uint64
-	ForwardTxnIDs []string
-}
-
 func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
 
 	zeroVer := version.NewHeight(0, 0)
@@ -141,7 +119,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 			return nil, errors.New("Fail to parse block index from Hist Query " + key)
 		}
 
-		var histResult HistResult
+		var histResult statedb.HistResult
 		compositeKey := string(encodeDataKey(namespace, originalKey))
 
 		if val, blkIdx, err := vdb.db.HistQuery(compositeKey, uint64(queriedBlkIdx)); err != nil {
@@ -170,7 +148,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 			return nil, errors.New("Fail to parse block index from Backward Query " + key)
 		}
 
-		var backResult BackwardResult
+		var backResult statedb.BackwardResult
 		compositeKey := string(encodeDataKey(namespace, originalKey))
 		if txnID, depKeys, depBlkHeights, err := vdb.db.Backward(compositeKey, uint64(queriedBlkIdx)); err != nil {
 			backResult.Msg = err.Error()
@@ -200,7 +178,7 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 			return nil, errors.New("Fail to parse block index from Forward Query " + key)
 		}
 
-		var forwardResult ForwardResult
+		var forwardResult statedb.ForwardResult
 		compositeKey := string(encodeDataKey(namespace, originalKey))
 		if txnIds, antiDepKeys, antiDepBlkHeights, err := vdb.db.Forward(compositeKey, uint64(queriedBlkIdx)); err != nil {
 			forwardResult.Msg = err.Error()

@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateustoredb"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/pkg/errors"
@@ -66,7 +67,7 @@ func NewDBProvider(
 
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
-
+	logger.Infof("Use StateDB: %s", stateDBConf.StateDatabase)
 	if stateDBConf == nil {
 		logger.Panic("DB Type not set. ")
 	} else if stateDBConf.StateDatabase == couchDB {
@@ -76,7 +77,10 @@ func NewDBProvider(
 		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider, sysNamespaces); err != nil {
 			return nil, err
 		}
-		// } else if  stateDBConf.StateDatabase == ustoreDB {
+	} else if stateDBConf.StateDatabase == ustoreDB {
+		if vdbProvider, err = stateustoredb.NewVersionedDBProvider(); err != nil {
+			return nil, err
+		}
 	} else if stateDBConf.StateDatabase == levelDB {
 		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath); err != nil {
 			return nil, err

@@ -388,3 +388,25 @@ func (itr *nsIterator) GetBookmarkAndClose() string {
 	// do nothing
 	return ""
 }
+
+// These three structs must have the identical structure with those
+//   in https://github.com/RUAN0007/fabric-chaincode-go/blob/master/shim/interfaces.go
+type HistResult struct {
+	Msg        string
+	Val        string
+	CreatedBlk uint64
+}
+
+type BackwardResult struct {
+	Msg       string
+	DepKeys   []string
+	DepBlkIdx []uint64
+	TxnID     string
+}
+
+type ForwardResult struct {
+	Msg           string
+	ForwardKeys   []string
+	ForwardBlkIdx []uint64
+	ForwardTxnIDs []string
+}
