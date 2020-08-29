@@ -19,7 +19,7 @@ var Version = metadata.Version
 
 func GetVersionInfo() string {
 	return fmt.Sprintf(
-		"%s:\n Version: %s\n Commit SHA: %s\n Go version: %s\n OS/Arch: %s\n",
+		"%s:\n Version: %s(SHARP)\n Commit SHA: %s\n Go version: %s\n OS/Arch: %s\n",
 		ProgramName,
 		Version,
 		metadata.CommitSHA,

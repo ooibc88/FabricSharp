@@ -71,8 +71,7 @@ ARCH=$(shell go env GOARCH)
 MARCH=$(shell go env GOOS)-$(shell go env GOARCH)
 
 # defined in common/metadata/metadata.go
-# METADATA_VAR = Version=$(BASE_VERSION)
-METADATA_VAR = Version=sharp
+METADATA_VAR = Version=$(BASE_VERSION)
 METADATA_VAR += CommitSHA=$(EXTRA_VERSION)
 METADATA_VAR += BaseDockerLabel=$(BASE_DOCKER_LABEL)
 METADATA_VAR += DockerNamespace=$(DOCKER_NS)
@@ -206,6 +205,12 @@ $(RELEASE_EXES): %: $(BUILD_DIR)/bin/%
 $(BUILD_DIR)/bin/%: GO_LDFLAGS = $(METADATA_VAR:%=-X $(PKGNAME)/common/metadata.%)
 $(BUILD_DIR)/bin/%:
 	@echo "Building $@"
+	@mkdir -p $(@D)
+	GOBIN=$(abspath $(@D)) go install -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" $(pkgmap.$(@F))
+	@touch $@
+
+$(BUILD_DIR)/bin/peer:
+	@echo "Building @"
 	@mkdir -p $(@D)
 	# CGO_CXXFLAGS="-std=c++11" CGO_LDFLAGS="-lustore_kv -lboost_system "  GOBIN=$(abspath $(@D)) go install -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" $(pkgmap.$(@F))
 	CGO_LDFLAGS="-lustore_kv"  GOBIN=$(abspath $(@D)) go install -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" $(pkgmap.$(@F))
