@@ -108,7 +108,7 @@ func (r *receiver) scheduleMsg(msg *cb.Envelope) bool {
 		logger.Infof("Put ahead non-endorsement txn %s\n\n", txnID)
 		return true
 	} else {
-		txnID = chdr.TxId[0:8] // only select the 8 char prefix
+		txnID = chdr.TxId[0:16] // only select the 16 char prefix
 	}
 
 	var resppayload *peer.ChaincodeAction
@@ -152,7 +152,7 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 	blkSize := int(batchSize.MaxMessageCount)
 	if b := localconfig.TryGetBlockSize(); 0 < b {
 		blkSize = b
-		logger.Infof("Override the current block size with env var to %d", blkSize)
+		logger.Debugf("Override the current block size with env var to %d", blkSize)
 	}
 	messageSizeBytes := messageSizeBytes(msg)
 

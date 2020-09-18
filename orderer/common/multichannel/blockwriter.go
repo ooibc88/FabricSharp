@@ -80,7 +80,7 @@ func (bw *BlockWriter) CreateNextBlock(messages []*cb.Envelope) *cb.Block {
 			logger.Panicf("Could not marshal envelope: %s", err)
 		}
 		if chdr, err := protoutil.ChannelHeader(msg); err == nil {
-			logger.Debugf("Batched Txn %s at %d", chdr.TxId, ts)
+			logger.Infof("Batched Txn %s at %d", chdr.TxId, ts)
 		}
 	}
 
@@ -173,6 +173,17 @@ func (bw *BlockWriter) WriteConfigBlock(block *cb.Block, encodedMetadataValue []
 func (bw *BlockWriter) WriteBlock(block *cb.Block, encodedMetadataValue []byte) {
 	bw.committingBlock.Lock()
 	bw.lastBlock = block
+
+	ts := time.Now().UnixNano() / int64(time.Millisecond)
+	for _, msgData := range block.Data.Data {
+		if msg, err := protoutil.UnmarshalEnvelope(msgData); err != nil {
+			logger.Panic("Fail to unmarshal the envelope from block data")
+		} else if chdr, err := protoutil.ChannelHeader(msg); err != nil {
+			logger.Panic("Fail to get chdr from envelop")
+		} else {
+			logger.Infof("Batched Txn %s at %d", chdr.TxId, ts)
+		}
+	}
 
 	go func() {
 		defer bw.committingBlock.Unlock()

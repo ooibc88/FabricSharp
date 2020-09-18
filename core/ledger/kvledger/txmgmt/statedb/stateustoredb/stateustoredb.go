@@ -36,12 +36,13 @@ type VersionedDBProvider struct {
 
 // NewVersionedDBProvider instantiates VersionedDBProvider
 func NewVersionedDBProvider() (*VersionedDBProvider, error) {
-	logger.Debug("constructing VersionedDBProvider for ustoredb")
+	logger.Info("Constructing VersionedDBProvider for ustoredb")
 	return &VersionedDBProvider{}, nil
 }
 
 // GetDBHandle gets the handle to a named database
 func (provider *VersionedDBProvider) GetDBHandle(dbName string, namespaceProvider statedb.NamespaceProvider) (statedb.VersionedDB, error) {
+	logger.Info("GetUstoreDB Handle")
 	return newVersionedDB(ustore.NewKVDB(), dbName), nil
 }
 
@@ -66,7 +67,7 @@ func (vdb *versionedDB) Open() error {
 	if status := vdb.udb.InitGlobalState(); !status.Ok() {
 		return errors.New("Fail to init state with status" + status.ToString())
 	} else {
-		logger.Debug("INIT GLOBAL STATE SUCCEEDED")
+		logger.Info("INIT GLOBAL STATE SUCCEEDED")
 	}
 	return nil
 }
@@ -271,9 +272,12 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 		for k, vv := range updates {
 			dataKey := encodeDataKey(hashedNs, k)
 
-			txnId := "default" // can not be empty
+			txnId := ""
 			if t, ok := txnIds[k]; ok {
 				txnId = t
+			}
+			if txnId == "" {
+				txnId = "default" // can not be empty
 			}
 			depList := ustore.NewVecStr()
 			keyDeps := []string{}

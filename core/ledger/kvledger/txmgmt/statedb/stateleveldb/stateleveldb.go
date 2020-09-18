@@ -346,7 +346,7 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	// if height != nil {
 	// 	dbBatch.Put(savePointKey, height.ToBytes())
 	// }
-	logger.Debugf("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
+	logger.Infof("Block %d: Applied batch size: %d", height.BlockNum, batchSize)
 	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
 	if err := vdb.db.WriteProvBatch(dbBatch, true); err != nil {
 		return err
