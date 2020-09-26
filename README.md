@@ -37,6 +37,10 @@ There are five optional value for `$CC_TYPE`, each corresponding to a transactio
 * `occ-latest`: one of the schedulers migrated from the OCC database
 * `occ-sharp`: our state-of-the-art scheduler. 
 
+## DB type
+We add two options for `STATEDATABASE`: `Provleveldb` and `UstoreDB`. Both support provenance-dependent smart contracts and five schedulers. `Provleveldb` extends the existing leveldb to store the data provenance. `Ustoredb` relies on ForkBase.
+FabricSharp is compatible with the existing two options: `goleveldb` and `CouchDB`. But both do not support provenance management. And both are only compatible with `original` scheduler. 
+
 To work with any `occ-*`-typed scheduler, users must set a directory path `$MV_STORE_PATH` for the LevelDB instance. 
 The instance implements the multi-versioned storage, used to compute the transaction dependency. 
 The directory will be emptied every time that the docker container runs

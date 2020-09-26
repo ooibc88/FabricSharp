@@ -40,10 +40,11 @@ var (
 // VersionedDBProvider implements interface VersionedDBProvider
 type VersionedDBProvider struct {
 	dbProvider *leveldbhelper.Provider
+	basic      bool
 }
 
 // NewVersionedDBProvider instantiates VersionedDBProvider
-func NewVersionedDBProvider(dbPath string) (*VersionedDBProvider, error) {
+func NewVersionedDBProvider(dbPath string, basic bool) (*VersionedDBProvider, error) {
 	logger.Debugf("constructing VersionedDBProvider dbPath=%s", dbPath)
 	dbProvider, err := leveldbhelper.NewProvider(
 		&leveldbhelper.Conf{
@@ -53,12 +54,12 @@ func NewVersionedDBProvider(dbPath string) (*VersionedDBProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &VersionedDBProvider{dbProvider}, nil
+	return &VersionedDBProvider{dbProvider, basic}, nil
 }
 
 // GetDBHandle gets the handle to a named database
 func (provider *VersionedDBProvider) GetDBHandle(dbName string, namespaceProvider statedb.NamespaceProvider) (statedb.VersionedDB, error) {
-	return newVersionedDB(provider.dbProvider.GetDBHandle(dbName), dbName), nil
+	return newVersionedDB(provider.dbProvider.GetDBHandle(dbName), dbName, provider.basic), nil
 }
 
 // Close closes the underlying db
@@ -70,11 +71,12 @@ func (provider *VersionedDBProvider) Close() {
 type versionedDB struct {
 	db     *leveldbhelper.DBHandle
 	dbName string
+	basic  bool
 }
 
 // newVersionedDB constructs an instance of VersionedDB
-func newVersionedDB(db *leveldbhelper.DBHandle, dbName string) *versionedDB {
-	return &versionedDB{db, dbName}
+func newVersionedDB(db *leveldbhelper.DBHandle, dbName string, basic bool) *versionedDB {
+	return &versionedDB{db, dbName, basic}
 }
 
 // Open implements method in VersionedDB interface
@@ -109,6 +111,9 @@ func (vdb *versionedDB) BytesKeySupported() bool {
 // }
 
 func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key string) (*statedb.VersionedValue, error) {
+	if vdb.basic {
+		logger.Panic("The basic mode of goleveldb does not support snapshot query.")
+	}
 
 	zeroVer := version.NewHeight(0, 0)
 	if localconfig.LineageSupported() && strings.HasSuffix(key, "_hist") {
@@ -217,16 +222,20 @@ func (vdb *versionedDB) GetSnapshotState(snapshot uint64, namespace string, key 
 
 // GetState implements method in VersionedDB interface
 func (vdb *versionedDB) GetState(namespace string, key string) (*statedb.VersionedValue, error) {
-	// logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)
-	return vdb.GetSnapshotState(leveldbhelper.MaxInt, namespace, key)
-	// dbVal, err := vdb.db.Get(encodeDataKey(namespace, key))
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if dbVal == nil {
-	// 	return nil, nil
-	// }
-	// return decodeValue(dbVal)
+	if vdb.basic {
+		// logger.Debugf("GetState(). ns=%s, key=%s", namespace, key)
+		dbVal, err := vdb.db.Get(encodeDataKey(namespace, key))
+		if err != nil {
+			return nil, err
+		}
+		if dbVal == nil {
+			return nil, nil
+		}
+		return decodeValue(dbVal)
+	} else {
+		return vdb.GetSnapshotState(leveldbhelper.MaxInt, namespace, key)
+
+	}
 }
 
 // GetVersion implements method in VersionedDB interface
@@ -292,8 +301,46 @@ func (vdb *versionedDB) ExecuteQueryWithPagination(namespace, query, bookmark st
 	return nil, errors.New("ExecuteQueryWithMetadata not supported for leveldb")
 }
 
+func (vdb *versionedDB) basicUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
+	logger.Infof("Basic Update States for Block %d", height.BlockNum)
+	dbBatch := leveldbhelper.NewUpdateBatch()
+	namespaces := batch.GetUpdatedNamespaces()
+	for _, ns := range namespaces {
+		updates := batch.GetUpdates(ns)
+		for k, vv := range updates {
+			dataKey := encodeDataKey(ns, k)
+			logger.Debugf("Channel [%s]: Applying key(string)=[%s] key(bytes)=[%#v]", vdb.dbName, string(dataKey), dataKey)
+
+			if vv.Value == nil {
+				dbBatch.Delete(dataKey)
+			} else {
+				encodedVal, err := encodeValue(vv)
+				if err != nil {
+					return err
+				}
+				dbBatch.Put(dataKey, encodedVal)
+			}
+		}
+	}
+	// Record a savepoint at a given height
+	// If a given height is nil, it denotes that we are committing pvt data of old blocks.
+	// In this case, we should not store a savepoint for recovery. The lastUpdatedOldBlockList
+	// in the pvtstore acts as a savepoint for pvt data.
+	if height != nil {
+		dbBatch.Put(savePointKey, height.ToBytes())
+	}
+	// Setting snyc to true as a precaution, false may be an ok optimization after further testing.
+	if err := vdb.db.WriteBatch(dbBatch, true); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ApplyUpdates implements method in VersionedDB interface
 func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version.Height) error {
+	if vdb.basic {
+		return vdb.basicUpdates(batch, height)
+	}
 	dbBatch := leveldbhelper.NewProvUpdateBatch(savePointKey, height.ToBytes())
 
 	namespaces := batch.GetUpdatedNamespaces()

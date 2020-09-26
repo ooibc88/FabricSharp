@@ -29,7 +29,7 @@ func NewTestVDBEnv(t testing.TB) *TestVDBEnv {
 	if err != nil {
 		t.Fatalf("Failed to create leveldb directory: %s", err)
 	}
-	dbProvider, err := NewVersionedDBProvider(dbPath)
+	dbProvider, err := NewVersionedDBProvider(dbPath, true)
 	require.NoError(t, err)
 	return &TestVDBEnv{t, dbProvider, dbPath}
 }

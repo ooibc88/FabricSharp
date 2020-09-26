@@ -36,6 +36,7 @@ const (
 	couchDB        = "CouchDB"
 	ustoreDB       = "UstoreDB"
 	levelDB        = "goleveldb"
+	levelprovDB    = "ProvlevelDB"
 )
 
 // StateDBConfig encapsulates the configuration for stateDB on the ledger.
@@ -82,7 +83,11 @@ func NewDBProvider(
 			return nil, err
 		}
 	} else if stateDBConf.StateDatabase == levelDB {
-		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath); err != nil {
+		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath, true); err != nil {
+			return nil, err
+		}
+	} else if stateDBConf.StateDatabase == levelprovDB {
+		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath, false); err != nil {
 			return nil, err
 		}
 	} else {
