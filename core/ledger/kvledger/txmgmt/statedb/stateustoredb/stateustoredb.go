@@ -327,6 +327,10 @@ func (vdb *versionedDB) ApplyUpdates(batch *statedb.UpdateBatch, height *version
 	if status := vdb.udb.Put("latest-height", strconv.Itoa(int(blkIdx))); !status.Ok() {
 		return errors.New("Fail to put latest block height with status " + status.ToString())
 	}
+	if blkIdx%100 == 1 {
+		logger.Infof("Storage Info at Blk %d", blkIdx)
+		vdb.udb.OutputChunkStorage()
+	}
 	return nil
 }
 
