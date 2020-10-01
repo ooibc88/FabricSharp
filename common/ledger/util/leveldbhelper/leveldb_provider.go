@@ -55,7 +55,7 @@ func lpad(s string, pad string, plength int) string {
 }
 
 // due to the restriction of lpad
-const MaxInt = 10000000 
+const MaxInt = 10000000
 
 // closeFunc closes the db handle
 type closeFunc func()
@@ -197,7 +197,7 @@ func (h *DBHandle) HistQuery(key string, blkHeight uint64) (string, uint64, erro
 	// logger.Infof("Historical query for Key: %s", histKey)
 	if it.Seek(histKey); it.Valid() {
 		splits := strings.Split(string(it.Key()), "-")
-		
+
 		if len(splits) == 4 && splits[0] == h.dbName && splits[1] == "hist" && splits[2] == key {
 			if committedBlkHeight, err = strconv.Atoi(splits[3]); err != nil {
 				panic("Fail to parse blk index " + splits[3])
@@ -215,7 +215,7 @@ func (h *DBHandle) HistQuery(key string, blkHeight uint64) (string, uint64, erro
 			return string(it.Value()), uint64(committedBlkHeight), nil
 		}
 	}
-	return "", 0, nil // record not found
+	return "", 0, errors.New("Not found") // record not found
 }
 
 func (h *DBHandle) Backward(key string, blkHeight uint64) (string, []string, []uint64, error) {
@@ -265,7 +265,7 @@ func (h *DBHandle) Backward(key string, blkHeight uint64) (string, []string, []u
 
 	}
 
-	return "", nil, nil, nil // record not found
+	return "", nil, nil, errors.New("Not found") // record not found
 }
 
 func (h *DBHandle) Forward(key string, blkHeight uint64) ([]string, []string, []uint64, error) {
@@ -306,7 +306,7 @@ func (h *DBHandle) Forward(key string, blkHeight uint64) ([]string, []string, []
 		// find the committed blk height for dependent key
 		return forwardResult.TxnIds, forwardResult.AntiDeps, forwardResult.BlkHeights, nil
 	}
-	return nil, nil, nil, nil // record not found
+	return nil, nil, nil, errors.New("Not found") // record not found
 }
 
 func (h *DBHandle) WriteProvBatch(batch *ProvUpdateBatch, sync bool) error {
