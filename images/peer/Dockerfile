@@ -72,7 +72,7 @@ COPY --from=peer /go/src/github.com/hyperledger/fabric/sampleconfig/core.yaml ${
 ENV USTORE_HOME=/usr/ustore_home
 ENV LD_LIBRARY_PATH=${USTORE_HOME}/lib:${LD_LIBRARY_PATH}
 
-RUN ["mkdir", "-p", "/data/ruanpc/ustore_data"]
+RUN ["mkdir", "-p", "/ustore_data"]
 
 EXPOSE 7051
 CMD ["peer","node","start"]
