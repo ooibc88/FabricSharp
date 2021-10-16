@@ -215,7 +215,8 @@ func (h *DBHandle) HistQuery(key string, blkHeight uint64) (string, uint64, erro
 			return string(it.Value()), uint64(committedBlkHeight), nil
 		}
 	}
-	return "", 0, errors.New("Not found") // record not found
+	// return "", 0, errors.New("Not found") // record not found
+	return "", 0, nil // record not found
 }
 
 func (h *DBHandle) Backward(key string, blkHeight uint64) (string, []string, []uint64, error) {
