@@ -72,4 +72,3 @@ Refer to [YCSB](benchmark/ycsb/ycsb.go) and [Smallbank](benchmark/smallbank/smal
 * [8] C. Yue.  Z. Xue, M. Zhang, G. Chen, B. C. Ooi, S. Wang, X. Xiao: [Analysis of Indexing Structures for Immutable Data](https://arxiv.org/pdf/2003.02090.pdf). ACM SIGMOD 2020.
 * [9] Q. Lin et al. ForkBase: Immutable, [Tamper-evident Storage Substrate for Branchable Applications](https://www.comp.nus.edu.sg/~ooibc/icde20forkbase.pdf). IEEE International Conference on Data Engineering, 2020
 * [10] P. Ruan, A. Dinh, Q. Lin, M. Zhang, G. Chen, B. C. Ooi: [Revealing Every Story of Data in Blockchain Systems](https://www.comp.nus.edu.sg/~ooibc/sigmodhighlight2020.pdf). ACM SIGMOD Highlight Award paper, 2020.
-* [11] P. Ruan, A. Dinh, D. Loghin, M. Zhang, G. Chen, Q. Lin, B.C. Ooi: [Blockchains vs. Distributed Databases: Dichotomy and Fusion](https://www.comp.nus.edu.sg/~ooibc/bcvsdb.pdf). ACM SIGMOD 2021.
