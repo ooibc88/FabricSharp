@@ -28,7 +28,7 @@ RUN echo 'http://nl.alpinelinux.org/alpine/v3.10/main' >> /etc/apk/repositories
 RUN apk update
 
 RUN apk add --no-cache \ 
-  crypto++-dev \
+#   crypto++-dev=8.6.0-r0 \
   protobuf-dev=3.6.1-r1 \
   czmq-dev=4.1.1-r2
 
@@ -56,7 +56,7 @@ RUN echo 'http://nl.alpinelinux.org/alpine/v3.10/main' >> /etc/apk/repositories
 RUN apk update
 
 RUN apk add --no-cache \ 
-  crypto++-dev \
+#   crypto++-dev=8.6.0-r0 \
   protobuf-dev=3.6.1-r1 \
   czmq-dev=4.1.1-r2
 
